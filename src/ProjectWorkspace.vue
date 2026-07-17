@@ -54,9 +54,9 @@
                 <span v-if="project.ID">ID: {{ project.ID }}</span>
                 <span v-if="server" class="ml-2">
                   ·
-                  <NuxtLink :to="`/${workspaceSlug}/server/${server.ID || server.id}`" class="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
+                  <a :href="`/${workspaceSlug}/server/${server.ID || server.id}`" class="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
                     {{ server.Info || server.info }}
-                  </NuxtLink>
+                  </a>
                 </span>
               </div>
               <div v-else class="text-xs font-mono text-gray-500 dark:text-gray-400 mt-1">...</div>
@@ -82,11 +82,11 @@
                 <MenuItems class="origin-top-right absolute z-20 right-0 mt-2 w-48 rounded-md ring-1 ring-gray-200 dark:ring-gray-800 focus:outline-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
                   <div class="py-1">
                     <MenuItem v-slot="{ active }">
-                      <NuxtLink :to="`/${workspaceSlug}/project-${route.params.project}/configure`"
+                      <a :href="`/${workspaceSlug}/project-${projectName}/configure`"
                                 :class="[active ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-300', 'flex px-4 py-2 text-sm']">
                         <PencilIcon class="mr-2 h-4 w-4 text-gray-400 dark:text-gray-500" aria-hidden="true"/>
                         Configure
-                      </NuxtLink>
+                      </a>
                     </MenuItem>
                     <MenuItem v-slot="{ active }">
                       <button @click="showExportModal = true"
@@ -207,7 +207,7 @@
              work shows here before flows/widgets details. -->
         <div :class="['min-h-64', tab === 'theater' ? '' : 'hidden']">
           <div class="px-4 sm:px-6 lg:px-8 py-4">
-            <MagicTheater :project="String(route.params.project)" />
+            <MagicTheater :project="projectName" />
           </div>
         </div>
 
@@ -718,14 +718,14 @@
   <!-- Recover Project Modal — shown when the cluster's TinyProject CR is missing -->
   <ProjectRecoverModal
     v-if="showRecoverModal"
-    :project-name="String(route.params.project)"
+    :project-name="projectName"
     @close="showRecoverModal = false; projectMissingInCluster = false"
     @success="() => { showRecoverModal = false; projectMissingInCluster = false; reloadProject() }"
   />
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { notify } from 'notiwind'
 import {
   Dialog,
@@ -740,7 +740,6 @@ import {
 } from '@headlessui/vue'
 import {
   CheckIcon,
-  EllipsisHorizontalIcon,
   EllipsisVerticalIcon
 } from '@heroicons/vue/24/solid'
 import {
@@ -752,6 +751,16 @@ import {
   PlusIcon,
   TrashIcon
 } from '@heroicons/vue/24/outline'
+
+// The backend seam + host facts, provided down the editor tree. The host
+// passes a transport-bound EditorClient in via props (in place of the
+// platform's useNuxtApp().$grpc / useAuthStore()); we provide it plus an
+// empty EditorContext.
+import { provideEditorClient, provideEditorContext, useEditorContext, type EditorClient } from './store/client'
+import { useActivityStore } from './store/activity'
+import { useSubscriptionStore } from './store/subscription'
+import { navigateTo } from './support/nav'
+import { defaultLocale } from './json-editor/common'
 
 import InlineOverlay from './canvas/InlineOverlay.vue'
 import MagicTheater from './agent-theater/MagicTheater.vue'
@@ -765,30 +774,38 @@ import 'gridstack/dist/gridstack.min.css'
 import SmallLoadingCircle from './support/SmallLoadingCircle.vue'
 import ProjectListItem from './project/ProjectListItem.vue'
 import Pagination from './project/Pagination.vue'
-import { JSONEditor as JsonEditor } from '@tinysystems/editor'
-import { defaultLocale } from '@tinysystems/editor'
+import { default as JsonEditor } from './json-editor/JSONEditor.vue'
 import ProjectExportModal from './project/ProjectExportModal.vue'
 import ProjectImportModal from './project/ProjectImportModal.vue'
 import ProjectRecoverModal from './project/ProjectRecoverModal.vue'
 
-import { DeleteProjectRequest, GetProjectStreamRequest, ProjectListRequest } from '~/grpc/project.messages_pb'
-import { PaginationRequest } from '~/grpc/pagination_pb'
-import { UndeployFlowRequest } from '~/grpc/flow.messages_pb'
-import { StatisticsStreamRequest } from '~/grpc/statistics.messages_pb'
-import { useAuthStore } from '~/stores/auth'
-import { useSubscriptionStore } from '~/stores/subscription'
+// Public API — the host mounts <ProjectWorkspace :client :project-name />.
+// These replace the page's route params + useNuxtApp().$grpc.
+const props = defineProps<{
+  client: EditorClient
+  projectName: string
+}>()
 
-const _navigateTo = navigateTo
+// Navigation to open a flow is surfaced to the host: it owns routing and
+// constructs its own URLs. Everything else the shell handles internally.
+const emit = defineEmits<{
+  (e: 'open-flow', flowResourceName: string): void
+}>()
 
-definePageMeta({
-  layout: 'dashboard',
-})
+// Provide the backend seam and (empty) context at the top of the tree so all
+// lifted components inject them instead of reaching for Nuxt globals.
+provideEditorClient(props.client)
+provideEditorContext({})
 
-const route = useRoute()
-const router = useRouter()
-const { $grpc } = useNuxtApp()
-const auth = useAuthStore()
+const client = props.client
+const editorCtx = useEditorContext()
 const subscriptionStore = useSubscriptionStore()
+const activity = useActivityStore()
+
+// Nav shim — a full-page navigation the host can intercept, used only for the
+// non-flow controls (back-to-projects, configure, delete redirect). Flow
+// navigation goes through emit('open-flow', ...) instead.
+const _navigateTo = navigateTo
 
 // State
 const tab = ref('theater')
@@ -821,12 +838,10 @@ const filteredProjects = computed(() => {
   return projects.value.filter((p: any) => (p.Name || p.name || '').toLowerCase().includes(q))
 })
 const projectPageCount = ref(0)
-// Pagination is persisted in the URL (`?page=2`) so that navigating to
-// a project from the sidebar list preserves the user's place. The
-// projects.vue list page uses the same query name via usePagination,
-// so the state carries both directions. ProjectListItem already
-// forwards $route.query through every project link.
-const projectActivePage = ref(Number(route.query.page) || 0)
+// Sidebar pagination. On the platform this was persisted in the URL
+// (`?page=2`); as a mountable component there's no router, so it starts at
+// the first page and lives in local state for the component's lifetime.
+const projectActivePage = ref(0)
 
 // Modals
 const openNewFlowModal = ref(false)
@@ -885,12 +900,10 @@ let statStreamAbort: AbortController | null = null
 let grid: any = null
 
 const workspaceSlug = computed(() => {
-  // Use route param as primary source since we're already in workspace context
-  if (route.params.workspace) {
-    return route.params.workspace as string
-  }
-  // Fallback to auth store
-  const ws = auth.workspace
+  // The host may supply the workspace via EditorContext; otherwise the shell
+  // runs workspace-agnostic and the slug is empty. Only the (host-owned)
+  // back/configure links read it.
+  const ws = editorCtx.workspace
   return ws?.Workspace?.SlugUniq || ws?.workspace?.sluguniq || ''
 })
 
@@ -951,16 +964,15 @@ const sendSignal = async (event: any, nodeId: string, portName: string = '_contr
   if (!event?.isAction) return
   if (!nodeId) return
 
-  const projectName = route.params.project as string
-  if (!projectName || !project.value) return
+  if (!props.projectName || !project.value) return
 
   loading.value = true
   try {
-    await $grpc.flow.runAction({
+    await client.flow.runAction({
       NodeID: nodeId,
       ProjectName: project.value.ResourceName || project.value.resourcename,
       PortName: portName,
-      Data: new TextEncoder().encode(JSON.stringify(event.value)) as Uint8Array<ArrayBuffer>
+      Data: new TextEncoder().encode(JSON.stringify(event.value))
     })
   } catch (e: any) {
     notify({
@@ -980,10 +992,10 @@ const getProjectId = (proj: any) => proj.Project?.ID || proj.project?.id
 const loadProjectsList = async () => {
   projectsLoading.value = true
   try {
-    const req = new ProjectListRequest({
-      PaginationRequest: new PaginationRequest({ Page: projectActivePage.value })
-    })
-    const resp = await $grpc.project.list(req)
+    const req: any = {
+      PaginationRequest: { Page: projectActivePage.value }
+    }
+    const resp = await client.project.list(req)
     projects.value = resp.Projects || (resp as any).projects || []
 
     const pagination = resp.Pagination || (resp as any).pagination
@@ -999,17 +1011,6 @@ const loadProjectsList = async () => {
 
 const setProjectPage = (page: number) => {
   projectActivePage.value = page
-  // Mirror the active page into the URL so subsequent navigations (and
-  // refreshes) keep the user on the same sidebar page. Uses the same
-  // ?page=N name as usePagination so projects.vue and the per-project
-  // sidebar stay in sync when the user navigates back and forth.
-  const query: Record<string, any> = { ...route.query }
-  if (page > 0) {
-    query.page = String(page)
-  } else {
-    delete query.page
-  }
-  router.replace({ query })
   loadProjectsList()
 }
 
@@ -1043,7 +1044,7 @@ const parseFlowGraph = (flowItem: any) => {
 
 // Start project stream
 const listenStream = async () => {
-  const projectName = route.params.project as string
+  const projectName = props.projectName
   if (!projectName) return
 
   // Cancel any existing stream
@@ -1052,13 +1053,13 @@ const listenStream = async () => {
   }
   streamAbort = new AbortController()
 
-  const req = new GetProjectStreamRequest({
+  const req: any = {
     ProjectName: projectName,
     PageName: dashboardPage.value || ''
-  })
+  }
 
   try {
-    for await (const response of $grpc.project.getStream(req, { signal: streamAbort.signal })) {
+    for await (const response of client.project.getStream(req, { signal: streamAbort.signal })) {
       connected.value = true
 
       // Handle different event types
@@ -1227,7 +1228,7 @@ const listenStream = async () => {
 
 // Start statistics stream
 const listenStatStream = async () => {
-  const projectName = route.params.project as string
+  const projectName = props.projectName
   if (!projectName) return
 
   // Cancel any existing stream
@@ -1236,12 +1237,12 @@ const listenStatStream = async () => {
   }
   statStreamAbort = new AbortController()
 
-  const req = new StatisticsStreamRequest({
+  const req: any = {
     ProjectName: projectName
-  })
+  }
 
   try {
-    for await (const response of $grpc.statistics.getStream(req, { signal: statStreamAbort.signal })) {
+    for await (const response of client.statistics.getStream(req, { signal: statStreamAbort.signal })) {
       for (const event of (response.Events || [])) {
         if (event.Metric === 'tiny_trace_count') {
           traceRate.value = event.Value ? event.Value.toFixed(2) : null
@@ -1293,8 +1294,8 @@ const deletePage = async () => {
   if (!dashboardPage.value || !project.value) return
 
   try {
-    await $grpc.project.deleteDashboardPage({
-      ProjectName: route.params.project as string,
+    await client.project.deleteDashboardPage({
+      ProjectName: props.projectName,
       PageName: dashboardPage.value
     })
     showDeletePageModal.value = false
@@ -1359,7 +1360,7 @@ const saveWidgets = async () => {
       widgetData.push(saveWidget)
     }
 
-    await $grpc.project.saveWidgets({
+    await client.project.saveWidgets({
       ProjectName: project.value.ResourceName || project.value.resourcename,
       PageName: dashboardPage.value,
       Widgets: widgetData
@@ -1449,8 +1450,10 @@ const resetWidgetSchema = () => {
 }
 
 const goToFlow = (flow: any) => {
-  if (flow.ResourceName && workspaceSlug.value) {
-    navigateTo(`/${workspaceSlug.value}/project-${route.params.project}/flow-${flow.ResourceName}`)
+  // The host owns flow routing: hand it the flow's resource name and let it
+  // decide how to open it. The shell never builds platform URLs.
+  if (flow.ResourceName) {
+    emit('open-flow', flow.ResourceName)
   }
 }
 
@@ -1469,10 +1472,10 @@ const doDeleteFlow = async () => {
 
   deletingFlow.value = true
   try {
-    const req = new UndeployFlowRequest({
+    const req: any = {
       FlowID: deleteFlowTarget.value.ID
-    })
-    await $grpc.flow.undeployFlow(req)
+    }
+    await client.flow.undeployFlow(req)
 
     notify({
       group: "generic",
@@ -1498,10 +1501,10 @@ const deleteProject = async () => {
 
   deletingProject.value = true
   try {
-    const req = new DeleteProjectRequest({
+    const req: any = {
       ProjectName: project.value.ResourceName || project.value.resourcename
-    })
-    await $grpc.project.delete(req)
+    }
+    await client.project.delete(req)
 
     notify({
       group: "generic",
@@ -1522,12 +1525,14 @@ const deleteProject = async () => {
   }
 }
 
-// Watch for route changes (for navigation between projects)
-watch(() => route.params.project, (newVal, oldVal) => {
+// Reload when the host swaps the project prop (navigating between projects
+// without remounting the shell).
+watch(() => props.projectName, (newVal, oldVal) => {
   // Skip initial call - handled by onMounted
   if (oldVal === undefined) return
   dashboardPage.value = null
   loadProject()
+  activity.start(props.projectName)
 })
 
 onMounted(() => {
@@ -1535,10 +1540,14 @@ onMounted(() => {
   initGrid()
   // Load projects list for sidebar
   loadProjectsList()
-  // Load current project (on client side where $grpc is available)
+  // Load current project
   loadProject()
   // Fetch subscription for limit checks
   subscriptionStore.fetchSubscription()
+  // Wire the agent activity feed to the injected client and open its stream
+  // for this project.
+  activity.setGrpcClient(props.client)
+  activity.start(props.projectName)
 })
 
 onUnmounted(() => {
@@ -1550,7 +1559,7 @@ onUnmounted(() => {
   }
 })
 
-useHead({
-  title: () => project.value ? `${project.value.Name} - Tiny Systems` : 'Project - Tiny Systems',
+onBeforeUnmount(() => {
+  activity.stop()
 })
 </script>

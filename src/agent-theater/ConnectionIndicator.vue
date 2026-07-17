@@ -40,7 +40,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useActivityStore } from '~/stores/activity'
+import { useActivityStore } from '../store/activity'
 
 const store = useActivityStore()
 

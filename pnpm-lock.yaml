@@ -41,6 +41,9 @@ importers:
       echarts:
         specifier: ^6.0.0
         version: 6.1.0
+      gridstack:
+        specifier: ^12.4.2
+        version: 12.6.0
       js-base64:
         specifier: ^3.7.0
         version: 3.9.1
@@ -628,6 +631,9 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  gridstack@12.6.0:
+    resolution: {integrity: sha512-dUrqsormSybFn/2P4Dz8AgprftKD5e/IiV7UmC0XLQU+G+/WtkAeFiCSNLoAGhPDXoJ/O61Xtj3gljY/Ds83yQ==}
 
   he@1.2.0:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
@@ -1268,6 +1274,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  gridstack@12.6.0: {}
 
   he@1.2.0: {}
 

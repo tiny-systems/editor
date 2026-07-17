@@ -45,6 +45,7 @@ export default defineConfig({
         'vue-debounce',
         'notiwind',
         'vue-echarts',
+        'gridstack',
         '@guolao/vue-monaco-editor',
         // echarts is imported via submodule paths (echarts/core, /charts, …);
         // externalize the whole namespace so the host owns the one big copy.

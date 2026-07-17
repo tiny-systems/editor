@@ -82,8 +82,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useActivityStore } from '~/stores/activity'
-import type { WorkspaceActivityEvent } from '~/grpc/mcp/v1/mcp_service_pb'
+import { useActivityStore } from '../store/activity'
 
 const store = useActivityStore()
 
@@ -100,7 +99,7 @@ interface Entry {
 interface Group {
   sessionId: string
   label: string
-  events: WorkspaceActivityEvent[]
+  events: any[]
   entries: Entry[]
 }
 
@@ -126,7 +125,7 @@ function toggleExpand(id: string) {
 // same {tool, message, indicator} shape so the feed reads uniformly
 // regardless of which event kind landed. Tool/event name is the
 // monospace identifier; message is a short, sans-serif descriptor.
-function formatEvent(evt: WorkspaceActivityEvent, idx: number): Entry {
+function formatEvent(evt: any, idx: number): Entry {
   const time = (() => {
     if (!evt.at) return ''
     const d = new Date(evt.at)
@@ -227,7 +226,7 @@ function prettifyArgs(s: string): string {
 // label. Otherwise show a short prefix + the dev key name (when
 // available) so users can tell whose session this is at a glance,
 // e.g. "Session 7a3f · alice-laptop · 16:48".
-function sessionLabel(sessionId: string, firstEvent: WorkspaceActivityEvent): string {
+function sessionLabel(sessionId: string, firstEvent: any): string {
   if (!sessionId) return 'Dashboard activity'
   const short = sessionId.length > 8 ? sessionId.slice(0, 8) : sessionId
   const keyName = firstEvent.actorKeyName?.trim() || ''

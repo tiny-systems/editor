@@ -22,7 +22,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { notify } from 'notiwind'
-import { CreateFlowRequest } from '~/grpc/flow.messages_pb'
+import { useEditorClient } from '../store/client'
 
 const props = defineProps<{
   projectID: string
@@ -30,7 +30,7 @@ const props = defineProps<{
 
 const emit = defineEmits(['success'])
 
-const { $grpc } = useNuxtApp()
+const client = useEditorClient()
 
 const name = ref('')
 const hasNameError = ref(false)
@@ -55,12 +55,12 @@ const onSubmit = async () => {
   loading.value = true
 
   try {
-    const req = new CreateFlowRequest({
+    const req = {
       Name: name.value,
       ProjectID: props.projectID
-    })
+    }
 
-    await $grpc.flow.createFlow(req)
+    await client.flow.createFlow(req)
 
     name.value = ''
     notify({

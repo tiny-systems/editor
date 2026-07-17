@@ -79,3 +79,11 @@ export * from './flow'
 //   <FlowWorkspace :client="client" :project-name="p" :flow-name="f" />
 // The host injects its transport-bound EditorClient via the `client` prop.
 export { default as FlowWorkspace } from './FlowWorkspace.vue'
+
+// The project shell — the full local project experience a host mounts: the
+// tabbed dashboard (Activity, Widgets, Flows/Nodes, Traces, Errors, Resources)
+// with the flows list opening the editor. Emits `open-flow` with a flow
+// resource name so the host routes into FlowWorkspace.
+//   <ProjectWorkspace :client="client" :project-name="p" @open-flow="..." />
+export { default as ProjectWorkspace } from './ProjectWorkspace.vue'
+export { useActivityStore } from './store/activity'

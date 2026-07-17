@@ -53,7 +53,7 @@
 </template>
 <script setup>
 import {PencilSquareIcon, TrashIcon} from '@heroicons/vue/24/outline'
-import Button from "../dashboard/Button.vue";
+import Button from "./Button.vue";
 import {Listbox, ListboxButton, ListboxOption, ListboxOptions} from '@headlessui/vue'
 import {CheckIcon} from "@heroicons/vue/24/solid";
 

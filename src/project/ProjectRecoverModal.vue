@@ -94,7 +94,24 @@ import {
   DialogOverlay,
 } from '@headlessui/vue'
 import { ref, computed, nextTick } from 'vue'
-import { RecoverProjectRequest, RecoveryPhase } from '~/grpc/project.messages_pb'
+import { useEditorClient } from '../store/client'
+
+// Inlined from the platform proto enum (project.messages_pb RecoveryPhase).
+// The library is proto-free, so the numeric wire values are declared locally;
+// they must stay in sync with the server's RecoveryPhase.
+const RecoveryPhase = {
+  RECOVERY_LOAD_PROJECT: 1,
+  RECOVERY_LOAD_FLOWS: 2,
+  RECOVERY_LOAD_NODES: 3,
+  RECOVERY_LOAD_PAGES: 4,
+  RECOVERY_APPLY_PROJECT: 10,
+  RECOVERY_APPLY_FLOWS: 11,
+  RECOVERY_APPLY_NODES: 12,
+  RECOVERY_APPLY_PAGES: 13,
+  RECOVERY_REREGISTER_MODULES: 14,
+  RECOVERY_DONE: 20,
+  RECOVERY_ERROR: 99,
+} as const
 
 const props = defineProps<{
   projectName: string
@@ -104,7 +121,7 @@ const emit = defineEmits<{
   (e: 'success'): void
 }>()
 
-const { $grpc } = useNuxtApp()
+const client = useEditorClient()
 
 type LogLine = { text: string; kind: 'info' | 'error' | 'done' }
 
@@ -155,8 +172,8 @@ async function recover() {
   total.value = 0
 
   try {
-    const req = new RecoverProjectRequest({ ProjectName: props.projectName })
-    for await (const ev of $grpc.project.recover(req)) {
+    const req = { ProjectName: props.projectName }
+    for await (const ev of client.project.recover(req)) {
       phaseLabel.value = phaseToLabel(ev.Phase)
       if (ev.Total > 0) total.value = ev.Total
       if (ev.Current > 0) current.value = ev.Current

@@ -20,7 +20,8 @@
 import { ref, onMounted, watch } from 'vue'
 import { notify } from 'notiwind'
 import SmallLoadingCircle from '../support/SmallLoadingCircle.vue'
-import { JSONEditor as JsonEditor } from '@tinysystems/editor'
+import JsonEditor from '../json-editor/JSONEditor.vue'
+import { useEditorClient } from '../store/client'
 import { Base64 } from 'js-base64'
 
 const props = defineProps({
@@ -31,7 +32,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['success'])
-const { $grpc } = useNuxtApp()
+const client = useEditorClient()
 
 const name = ref('')
 const schema = ref({})
@@ -47,7 +48,7 @@ onMounted(async () => {
   loading.value = true
 
   try {
-    const resp = await $grpc.project.getConfiguration({
+    const resp = await client.project.getConfiguration({
       ProjectName: props.projectName
     })
 
@@ -87,7 +88,7 @@ onMounted(async () => {
 const updateValue = async (event) => {
   if (event.isAction && event.isValid) {
     try {
-      await $grpc.project.createDashboardPage({
+      await client.project.createDashboardPage({
         ProjectName: props.projectName,
         CreatePageForm: {
           Data: new TextEncoder().encode(JSON.stringify(data.value))

@@ -46,8 +46,9 @@ import {
 
 import { onMounted, ref } from 'vue'
 import InlineOverlay from '../canvas/InlineOverlay.vue'
+import { useEditorClient } from '../store/client'
 
-const { $grpc } = useNuxtApp()
+const client = useEditorClient()
 
 const emit = defineEmits(['close'])
 const exportDialog = ref('')
@@ -73,7 +74,7 @@ const copyContent = async () => {
 onMounted(async () => {
   loading.value = true
   try {
-    const resp = await $grpc.project.export({
+    const resp = await client.project.export({
       ProjectName: props.projectName
     })
     exportDialog.value = resp.Export

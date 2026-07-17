@@ -100,11 +100,31 @@ export interface FlowClient {
   createScenarioFromTrace(req: any): Promise<any>
   transferNodes(req: any): Promise<any>
   undeployFlow(req: any): Promise<any>
+  renameFlow(req: any): Promise<any>
 }
 
-// project slice — configuration lookups (add-component form defaults).
+// project slice — the project dashboard (its live stream) + configuration,
+// flows/widgets management, and project lifecycle.
 export interface ProjectClient {
   getProjectConfiguration(req: any): Promise<any>
+  getConfiguration(req: any): Promise<any>
+  // Live project stream — drives the dashboard's widgets, flow/node counts,
+  // resources and status. Server-streaming.
+  getStream(req: any): AsyncIterable<any>
+  list(req: any): Promise<any>
+  saveWidgets(req: any): Promise<any>
+  createDashboardPage(req: any): Promise<any>
+  deleteDashboardPage(req: any): Promise<any>
+  delete(req: any): Promise<any>
+  export(req: any): Promise<any>
+  import(req: any): AsyncIterable<any>
+  recover(req: any): AsyncIterable<any>
+}
+
+// workspaceActivity slice — the agent activity feed (WorkspaceActivityService).
+// Server-streaming; the activity store consumes it.
+export interface WorkspaceActivityClient {
+  watch(req: any, opts?: { signal?: AbortSignal }): AsyncIterable<any>
 }
 
 // runs slice — the durable-run panel.
@@ -130,6 +150,9 @@ export interface EditorClient {
   project: ProjectClient
   runs: RunsClient
   statistics: StatisticsClient
+  // Optional: the project shell's activity feed. Hosts that don't surface the
+  // dashboard (e.g. the bare editor) can omit it.
+  workspaceActivity?: WorkspaceActivityClient
 }
 
 // ── provide / inject ──────────────────────────────────────────────────────

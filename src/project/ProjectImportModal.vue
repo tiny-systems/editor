@@ -109,8 +109,9 @@ import { CheckCircleIcon, ExclamationCircleIcon, ClipboardDocumentIcon } from '@
 import SmallLoadingCircle from '../support/SmallLoadingCircle.vue'
 import { ref } from 'vue'
 import { notify } from 'notiwind'
+import { useEditorClient } from '../store/client'
 
-const { $grpc } = useNuxtApp()
+const client = useEditorClient()
 
 const importJSON = ref('')
 const parseError = ref('')
@@ -154,7 +155,7 @@ const importProject = async () => {
       throw new Error('Invalid project export format. Expected version, tinyFlows, and elements fields.')
     }
 
-    for await (const response of $grpc.project.import({
+    for await (const response of client.project.import({
       ProjectName: props.projectName,
       Data: importJSON.value
     })) {

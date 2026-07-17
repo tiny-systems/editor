@@ -18,9 +18,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { notify } from 'notiwind'
-import { JSONEditor as JsonEditor } from '@tinysystems/editor'
-import { GetFlowRequest, RenameFlowRequest } from '~/grpc/flow.messages_pb'
-import { Configuration } from '~/grpc/configuration_pb'
+import JsonEditor from '../json-editor/JSONEditor.vue'
+import { useEditorClient } from '../store/client'
 
 const props = defineProps<{
   flowName: string
@@ -29,7 +28,7 @@ const props = defineProps<{
 
 const emit = defineEmits(['success'])
 
-const { $grpc } = useNuxtApp()
+const client = useEditorClient()
 
 const schema = ref<any>(null)
 const data = ref<any>(null)
@@ -41,12 +40,12 @@ onMounted(async () => {
   error.value = null
 
   try {
-    const req = new GetFlowRequest({
+    const req = {
       FlowName: props.flowName,
       ProjectName: props.projectName
-    })
+    }
 
-    const resp = await $grpc.flow.getFlow(req)
+    const resp = await client.flow.getFlow(req)
 
     // Parse schema and data from the RenameForm Configuration
     const renameForm = resp.RenameForm
@@ -81,17 +80,17 @@ const updateValue = async (event: any) => {
   loading.value = true
 
   try {
-    const renameConf = new Configuration({
+    const renameConf = {
       Data: new TextEncoder().encode(JSON.stringify(data.value)) as Uint8Array<ArrayBuffer>
-    })
+    }
 
-    const req = new RenameFlowRequest({
+    const req = {
       RenameForm: renameConf,
       FlowName: props.flowName,
       ProjectName: props.projectName
-    })
+    }
 
-    await $grpc.flow.renameFlow(req)
+    await client.flow.renameFlow(req)
 
     notify({
       group: "generic",

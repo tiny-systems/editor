@@ -51,8 +51,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useActivityStore } from '~/stores/activity'
-import { useAgentSounds } from '~/composables/useAgentSounds'
+import { useActivityStore } from '../store/activity'
+import { useAgentSounds } from '../support/useAgentSounds'
 import PerimeterGlow from './PerimeterGlow.vue'
 import ConnectionIndicator from './ConnectionIndicator.vue'
 import ActivityFeed from './ActivityFeed.vue'

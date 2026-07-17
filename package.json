@@ -47,6 +47,7 @@
     "@vue-flow/minimap": "^1.5.2",
     "@vueuse/core": "^13.0.0",
     "echarts": "^6.0.0",
+    "gridstack": "^12.4.2",
     "js-base64": "^3.7.0",
     "lodash": "^4.17.21",
     "notiwind": "^2.1.0",

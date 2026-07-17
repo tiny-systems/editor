@@ -1,6 +1,6 @@
 <template>
-  <NuxtLink
-    :to="{ path: `/${workspaceSlug}/project-${resourceName}`, query: $route.query }"
+  <a
+    :href="`/${workspaceSlug}/project-${resourceName}`"
     :class="[
       'block px-4 py-3 transition-colors',
       props.highlighted
@@ -40,23 +40,23 @@
         <span class="truncate">{{ server.Info || server.info }}</span>
       </span>
     </div>
-  </NuxtLink>
+  </a>
 </template>
 <script setup lang="ts">
 import { computed } from 'vue'
 import { CogIcon, UsersIcon, ClockIcon } from '@heroicons/vue/24/outline'
-import { useAuthStore } from '~/stores/auth'
+import { useEditorContext } from '../store/client'
 
 const props = defineProps<{
   proj: any
   highlighted?: boolean
 }>()
 
-const auth = useAuthStore()
+const editorCtx = useEditorContext()
 
 // Handle both PascalCase (Connect-ES) and lowercase (legacy) field names
 const workspaceSlug = computed(() => {
-  const ws = auth.workspace
+  const ws = editorCtx.workspace
   return ws?.Workspace?.SlugUniq || ws?.workspace?.sluguniq || ''
 })
 
