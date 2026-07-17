@@ -1,41 +1,9 @@
 <template>
   <div class="flex-1 z-0 flex overflow-hidden flex-col xl:flex-row">
-    <!-- Projects sidebar (hidden on mobile) -->
-    <main class="flex-1 z-0 hidden xl:block overflow-y-auto focus:outline-none half xl:h-full xl:w-1/3 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800">
-      <div class="sticky top-0 z-20 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 px-4 py-3">
-        <div class="flex items-center gap-2">
-          <button type="button" @click="_navigateTo(`/${workspaceSlug}/projects`)" title="Back to agents list"
-                  class="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm">
-            <svg aria-hidden="true" class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M15 19l-7-7 7-7" />
-            </svg>
-            <span class="sr-only">Back to the list of agents</span>
-          </button>
-          <input v-model="projectSearch" type="text" placeholder="Search agents..."
-                 class="flex-1 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-200 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-        </div>
-      </div>
-      <div class="relative p-3">
-        <div v-if="projectsLoading" class="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Loading...</div>
-        <div v-else-if="filteredProjects.length === 0" class="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">{{ projectSearch ? 'No matching projects' : 'List is empty' }}</div>
-        <div v-else class="border border-gray-200 dark:border-gray-800 rounded-md overflow-hidden">
-          <ul role="list" class="divide-y divide-gray-200 dark:divide-gray-800">
-            <li v-for="proj in filteredProjects" :key="getProjectId(proj)">
-              <ProjectListItem :proj="proj" :highlighted="project && project.ID === getProjectId(proj)" />
-            </li>
-          </ul>
-        </div>
-      </div>
-      <Pagination v-if="!projectsLoading && projectPageCount > 1"
-        :pageCount="projectPageCount"
-        :activePage="projectActivePage"
-        @setActivePage="setProjectPage"
-      />
-    </main>
-
-    <!-- Project details -->
+    <!-- Single project per session — no project list. The whole viewport is
+         this project. -->
     <aside
-      class="text-sm relative xl:flex xl:flex-col flex-shrink-0 dark:text-gray-300 xl:w-4/5 w-full bg-white dark:bg-gray-950 border-t xl:border-t-none xl:border-l border-gray-200 dark:border-gray-800 overflow-y-auto xl:h-full">
+      class="text-sm relative xl:flex xl:flex-col flex-shrink-0 dark:text-gray-300 w-full bg-white dark:bg-gray-950 overflow-y-auto xl:h-full">
       <div class="sticky top-0 z-20 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800">
         <div class="flex flex-wrap items-center justify-between sm:flex-nowrap px-4 sm:px-6 lg:px-8 py-5">
           <div class="flex items-center gap-3">
@@ -47,8 +15,8 @@
               <span class="sr-only">Back to list of projects</span>
             </button>
             <div>
-              <h3 class="text-2xl font-thin text-gray-900 dark:text-gray-100">
-                {{ !project ? 'Loading...' : project.Name }}
+              <h3 class="text-2xl font-thin text-gray-900 dark:text-gray-100" :class="{ 'text-red-500 dark:text-red-400': error }">
+                {{ error ? ('Failed to load project: ' + error) : (!project ? 'Loading…' : project.Name) }}
               </h3>
               <div class="text-xs font-mono text-gray-500 dark:text-gray-400 mt-1" v-if="!loading && project">
                 <span v-if="project.ID">ID: {{ project.ID }}</span>
@@ -1538,9 +1506,7 @@ watch(() => props.projectName, (newVal, oldVal) => {
 onMounted(() => {
   // Initialize GridStack
   initGrid()
-  // Load projects list for sidebar
-  loadProjectsList()
-  // Load current project
+  // Load current project (single project per session — no project list)
   loadProject()
   // Fetch subscription for limit checks
   subscriptionStore.fetchSubscription()
