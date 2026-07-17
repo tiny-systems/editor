@@ -87,3 +87,8 @@ export { default as FlowWorkspace } from './FlowWorkspace.vue'
 //   <ProjectWorkspace :client="client" :project-name="p" @open-flow="..." />
 export { default as ProjectWorkspace } from './ProjectWorkspace.vue'
 export { useActivityStore } from './store/activity'
+
+// setNavigator lets the host route the editor's platform-style navigation
+// (back-to-project, flow switch) through its own router instead of a full-page
+// reload. See support/nav.ts.
+export { setNavigator } from './support/nav'
