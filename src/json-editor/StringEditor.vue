@@ -1,0 +1,611 @@
+<template>
+  <div :class="className">
+    <div :class="theme.title">
+      <div class="flex space-x-1 w-full">
+        <div class="pl-1" v-if="titleToShow != ''">{{titleToShow}}</div>
+        <button v-if="allowEditSchema && schema.configurable && value !== undefined" @click="configureSchema()" title="Configure type" type="button" class="w-6 h-6 border border-indigo-500 dark:border-indigo-800  rounded p-1 button inline-block cursor-pointer hover:bg-indigo-300 dark:hover:bg-indigo-800">
+          <PencilIcon></PencilIcon>
+        </button>
+      </div>
+      <div :class="theme.buttonGroup" :style="buttonGroupStyle">
+        <optional :required="required"
+                  :value="value"
+                  :isReadOnly="isReadOnly"
+                  :theme="theme"
+                  :locale="locale"
+                  @toggleOptional="toggleOptional()">
+        </optional>
+      </div>
+    </div>
+    <div :class="['flex', deleteHover ? 'bg-red-100 dark:bg-red-900/50 border-0 rounded' : (hover ? 'bg-indigo-100 dark:bg-indigo-800 border-0 rounded' : '')]" v-if="value !== undefined">
+      <div v-if="canUpload" class="flex items-center space-x-2 w-full">
+        <img v-if="value && canPreviewImage" :src="value" class="h-10 w-10 object-cover rounded flex-shrink-0" />
+        <label class="cursor-pointer inline-flex items-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            class="hidden"
+            @change="onFileUpload"
+            :disabled="isReadOnly || uploadLoading"
+          />
+          {{ uploadLoading ? 'Uploading...' : (value ? 'Change' : 'Upload') }}
+        </label>
+        <span v-if="uploadError" class="text-xs text-red-500">{{ uploadError }}</span>
+      </div>
+      <div v-if="useTextArea && isSecret && !secretVisible" class="relative w-full">
+        <textarea
+          :class="[errorMessage ? theme.errorTextarea : theme.textarea, 'text-transparent dark:text-transparent select-none']"
+          :rows="!!expression ? 3 : 10"
+          disabled
+          :value="expression || value"></textarea>
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <LockClosedIcon class="w-16 h-16 text-gray-300 dark:text-gray-600" />
+        </div>
+      </div>
+      <textarea v-else-if="useTextArea"
+          :class="[errorMessage ? theme.errorTextarea : theme.textarea, !!expression ? theme.expression : '']"
+          @change="onChange($event)" @keyup="onChange($event)" :rows="!!expression ? 3 : 10"
+          :disabled="isReadOnly || !!expression" :value="expression || value"></textarea>
+      <button v-if="useTextArea && isSecret && value"
+              type="button"
+              class="w-5 h-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer mx-1 flex-shrink-0 self-center"
+              @click="secretVisible = !secretVisible"
+              :title="secretVisible ? 'Hide value' : 'Show value'">
+        <EyeSlashIcon v-if="secretVisible" />
+        <EyeIcon v-else />
+      </button>
+      <vue-monaco-editor v-if="useCodeEditor"
+        :class="[errorMessage ? theme.errorCodeEditor : theme.codeEditor, !!expression ? theme.expression : '', 'min-h-[32rem]']"
+        :value="expression || value"
+        :language="schema.language"
+        :theme="codeEditorTheme"
+        @change="onChange({target:{value:$event}})"
+        :options="{
+          formatOnType: true,
+          formatOnPaste: true,
+          readonly: isReadOnly || !!expression
+        }"
+      />
+      <input v-if="useInput"
+             :class="[errorMessage ? theme.errorInput : theme.input, !!expression ? theme.expression : theme.staticText]"
+             :type="isSecret && !secretVisible ? 'password' : getInputType(schema.format || 'text')"
+             @change="onChange($event)"
+             @keyup="onChange($event)"
+             :value="expression || value"
+             autocomplete="off"
+             :readonly="acGuard"
+             @focus="acGuard = false"
+             @blur="acGuard = true"
+             :disabled="isReadOnly || !!expression"/>
+      <button v-if="useInput && isSecret"
+              type="button"
+              class="w-5 h-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer mx-1 flex-shrink-0 self-center"
+              @click="secretVisible = !secretVisible"
+              :title="secretVisible ? 'Hide value' : 'Show value'">
+        <EyeSlashIcon v-if="secretVisible" />
+        <EyeIcon v-else />
+      </button>
+      <!-- Standard select for small option lists -->
+      <select v-if="useSelectComponent && !useRadioBoxComponent && !useSearchableSelect"
+              :class="[errorMessage ? theme.selectError : theme.select, !!expression ? theme.expression : theme.staticText]"
+              :value="!!expression ? 'expression' : value"
+              :disabled="isReadOnly || !!expression"
+              @change="updateSelection(($event.target as HTMLSelectElement).value)">
+        <option v-for="option in options" :key="option.value" :value="option.value">{{option.label}}</option>
+        <option v-if="expression" value="expression">{{expression}}</option>
+      </select>
+      <!-- Searchable select for large option lists (20+ options) -->
+      <div v-if="useSelectComponent && !useRadioBoxComponent && useSearchableSelect" ref="searchableSelectRef" class="relative w-full">
+        <div class="relative">
+          <input
+            type="text"
+            :class="[errorMessage ? theme.errorInput : theme.input, 'pr-8']"
+            :value="searchQuery !== null ? searchQuery : selectedOptionLabel"
+            :placeholder="selectedOptionLabel || 'Search...'"
+            :disabled="isReadOnly || !!expression"
+            @focus="openSearchableDropdown"
+            @input="onSearchInput($event)"
+            @keydown.escape="closeSearchableDropdown"
+            @keydown.enter.prevent="selectFirstFilteredOption"
+            @keydown.down.prevent="focusNextOption"
+            @keydown.up.prevent="focusPrevOption"
+          />
+          <button
+            type="button"
+            class="absolute inset-y-0 right-0 flex items-center pr-2"
+            @click="toggleSearchableDropdown"
+            :disabled="isReadOnly || !!expression"
+          >
+            <ChevronDownIcon class="h-4 w-4 text-gray-400" />
+          </button>
+        </div>
+        <!-- Teleport dropdown to body to escape overflow clipping -->
+        <Teleport to="body">
+          <div
+            v-if="isSearchableDropdownOpen"
+            :style="dropdownStyle"
+            class="fixed z-[9999] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto"
+          >
+            <div
+              v-for="(option, index) in filteredOptions"
+              :key="option.value"
+              :class="[
+                'px-3 py-2 cursor-pointer text-sm',
+                option.value === value ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100' : 'hover:bg-gray-100 dark:hover:bg-gray-800',
+                focusedOptionIndex === index ? 'bg-gray-100 dark:bg-gray-800' : ''
+              ]"
+              @click="selectSearchableOption(option.value)"
+              @mouseenter="focusedOptionIndex = index"
+            >
+              {{ option.label }}
+            </div>
+            <div v-if="filteredOptions.length === 0" class="px-3 py-2 text-sm text-gray-500">
+              No options found
+            </div>
+          </div>
+        </Teleport>
+      </div>
+      <div v-if="useRadioBoxComponent && !expression" class="w-full">
+        <span v-for="option in options" :key="option.value" :class="theme.radiobox">
+          <label :class="theme.label">
+            <input type="radio"
+                   @change="updateSelection(option.value)"
+                   :checked="value === option.value"
+                   :disabled="isReadOnly" />
+            {{option.label}}
+          </label>
+        </span>
+      </div>
+      <div v-if="useRadioBoxComponent && !!expression" class="w-full">
+        <label :class="theme.expression">
+          <input type="radio" :checked="true" name="expression" :readonly="true" />
+          {{expression}}
+        </label>
+      </div>
+      <img v-if="willPreviewImage"
+           :class="theme.img"
+           :style="imagePreviewStyle"
+           :src="getImageUrl" />
+
+      <button  v-if="hasDeleteButtonFunction" type="button" class="ml-1 w-4 text-indigo-500 inline-block cursor-pointer ml-1"  @click="$emit('delete')" title="Delete">
+        <XCircleIcon></XCircleIcon>
+      </button>
+      <button v-if="allowLookup && value !== undefined && !isMixedExpression && !isReadOnly" @mouseover="hover = true" @mouseleave="hover = false" type="button" class="w-4 block text-indigo-500 cursor-pointer mx-1" @click="$emit('lookup', getAllValue(), schema, onChangeExpression)" :title="expression ? 'Edit expression' : 'Apply expression'">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
+        </svg>
+      </button>
+      <button v-if="expression && !isReadOnly" type="button" class="w-4 block text-red-500 cursor-pointer mx-1" @mouseover="deleteHover = true" @mouseleave="deleteHover = false" @click="clearExpression" title="Clear expression">
+        <XCircleIcon></XCircleIcon>
+      </button>
+    </div>
+    <description :theme="theme" :message="schema.description" ></description>
+    <description :theme="theme" :message="errorMessage" :error="true"></description>
+    <!-- Expression chips for mixed expressions -->
+    <div v-if="allowLookup && !isReadOnly && embeddedExpressions.length > 0" class="flex flex-wrap gap-1 mt-1">
+      <button
+        v-for="(expr, idx) in embeddedExpressions"
+        :key="idx"
+        @click="editEmbeddedExpression(idx)"
+        type="button"
+        class="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded hover:bg-indigo-200 dark:hover:bg-indigo-800 font-mono"
+        :title="'Edit expression: ' + expr"
+      >
+        {{ expr.length > 30 ? expr.substring(0, 30) + '...' : expr }}
+      </button>
+    </div>
+  </div>
+</template>
+<script lang="ts">
+import { defineComponent } from 'vue'
+import type { PropType } from 'vue'
+import { defineAsyncComponent } from 'vue'
+import * as common from './common'
+import {XCircleIcon, ChevronRightIcon, ChevronDownIcon, PencilIcon, EyeIcon, EyeSlashIcon, LockClosedIcon} from '@heroicons/vue/24/outline'
+import Optional from './Optional.vue'
+import Description from './Description.vue'
+import { useDark } from "@vueuse/core";
+
+// Lazy load monaco editor to avoid SSR issues
+const VueMonacoEditor = defineAsyncComponent(() =>
+  import('@guolao/vue-monaco-editor').then(m => m.VueMonacoEditor)
+)
+export default defineComponent({
+  components: {
+    XCircleIcon, ChevronRightIcon, ChevronDownIcon, PencilIcon, EyeIcon, EyeSlashIcon, LockClosedIcon,
+    optional: Optional,
+    description: Description,
+    'vue-monaco-editor': VueMonacoEditor
+  },
+  emits: ['delete', 'update-value', 'lookup'],
+  props: {
+    schema: {
+      type: Object as PropType<common.StringSchema>,
+      required: true,
+    },
+    allowLookup: Boolean,
+    plainStruct: Boolean,
+    initialValue: null,
+    allowEditSchema: Boolean,
+    title: [String, Number],
+    theme: {
+      type: Object as PropType<common.Theme>,
+      required: true,
+    },
+    locale: {
+      type: Object as PropType<common.Locale>,
+      required: true,
+    },
+    readonly: Boolean,
+    required: Boolean,
+    hasDeleteButton: {
+      type: Boolean,
+      required: false
+    }
+  },
+  data: () => {
+    return {
+      codeEditorTheme: 'vs',
+      acGuard: true,
+      value: '' as string | undefined,
+      expression: undefined as string | undefined,
+      portName: null as string | null,
+      hover: false,
+      secretVisible: false,
+      deleteHover: false,
+      errorMessage: '' as string | undefined,
+      buttonGroupStyle: common.buttonGroupStyleString,
+      imagePreviewStyle: common.imagePreviewStyleString,
+      // Upload state
+      uploadLoading: false,
+      uploadError: '' as string,
+      // Searchable select state
+      searchQuery: null as string | null,
+      isSearchableDropdownOpen: false,
+      focusedOptionIndex: -1,
+      dropdownPosition: { top: 0, left: 0, width: 0 }
+    }
+  },
+  beforeMount() {
+    this.value = this.getValue()
+    // Extract expression from {{expr}} pattern
+    this.expression = this.extractExpression(this.initialValue)
+    this.validate()
+    if (this.value !== undefined) {
+      this.emitValue()
+    }
+  },
+  mounted() {
+    const isDark = useDark({
+      onChanged: (dark) => {
+        if (dark) {
+          this.codeEditorTheme = 'vs-dark'
+        } else {
+          this.codeEditorTheme = 'vs'
+        }
+      }
+    })
+    // Add click outside listener for searchable dropdown
+    document.addEventListener('click', this.handleClickOutside)
+  },
+  beforeUnmount() {
+    document.removeEventListener('click', this.handleClickOutside)
+  },
+  methods: {
+    toggleOptional() {
+      if (this.value !== undefined) {
+        this.value = undefined
+      } else {
+        this.value = this.getValue()
+      }
+      this.emitValue()
+    },
+    configureSchema() {
+      this.schema.configure = true
+    },
+    async onFileUpload(e: Event) {
+      const input = e.target as HTMLInputElement
+      if (!input.files || input.files.length === 0) return
+
+      const file = input.files[0]
+      if (!file) return
+      this.uploadLoading = true
+      this.uploadError = ''
+
+      try {
+        // Convert file to base64 data URL
+        const reader = new FileReader()
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+
+        this.value = dataUrl
+        this.validate()
+        this.emitValue()
+      } catch (err: any) {
+        this.uploadError = err.message || 'Upload failed'
+      } finally {
+        this.uploadLoading = false
+        input.value = ''
+      }
+    },
+    getValue():string {
+      // For new {{expr}} format, extract actual value (not the expression wrapper)
+      if (typeof this.initialValue === 'string') {
+        const match = this.initialValue.match(/^\{\{(.+)\}\}$/)
+        if (match) {
+          // It's an expression - return empty string so field shows as "defined"
+          // The actual expression is stored in this.expression
+          return ''
+        }
+        return this.initialValue
+      }
+      return common.getDefaultValue(this.required, this.schema, this.initialValue) as string
+    },
+    getInputType(t: string):string {
+      if (t === 'date-time') {
+        return 'text'
+      }
+      return t
+    },
+    onChange(e: Event | { target: { value: string } }) {
+      this.value = (e.target as HTMLInputElement).value
+      this.validate()
+      this.emitValue()
+    },
+    onChangeExpression(dataExpression: string, portName: string) {
+      this.expression = dataExpression
+      this.portName = portName
+      this.validate()
+      this.emitValue()
+    },
+    updateSelection(value: string | number) {
+      this.value = String(value)
+      this.validate()
+      this.emitValue()
+    },
+    emitValue() {
+      this.$emit('update-value', { value: this.getAllValue(), isValid: !this.errorMessage })
+    },
+    getAllValue() {
+      if(this.value === undefined || this.plainStruct) {
+        return this.value
+      }
+      // New format: expression wrapped in {{expr}}, literals are plain values
+      if (this.expression) {
+        return `{{${this.expression}}}`
+      }
+      return this.value || ''
+    },
+    extractExpression(val: any): string | undefined {
+      if (typeof val === 'string') {
+        // New format: {{expression}}
+        const match = val.match(/^\{\{(.+)\}\}$/)
+        if (match) {
+          return match[1]
+        }
+      }
+      return undefined
+    },
+    clearExpression() {
+      this.expression = undefined
+      this.validate()
+      this.emitValue()
+    },
+    editEmbeddedExpression(idx: number) {
+      const expressions = this.embeddedExpressions
+      if (idx < 0 || idx >= expressions.length) return
+
+      const exprToEdit = expressions[idx]
+      // Use simple string schema for embedded expressions
+      const stringSchema = { type: 'string' }
+
+      // Callback to replace this specific expression in the value
+      const onUpdate = (newExpr: string) => {
+        if (!newExpr) return
+        const currentValue = this.value || ''
+        // Find and replace the nth occurrence
+        let count = 0
+        const newValue = currentValue.replace(/\{\{(.+?)\}\}/g, (match, expr) => {
+          if (count === idx) {
+            count++
+            return `{{${newExpr}}}`
+          }
+          count++
+          return match
+        })
+        this.value = newValue
+        this.validate()
+        this.emitValue()
+      }
+
+      this.$emit('lookup', `{{${exprToEdit}}}`, stringSchema, onUpdate)
+    },
+    validate() {
+      if (!!this.expression || this.isReadOnly) {
+        this.errorMessage = ''
+        return;
+      }
+      this.errorMessage = common.getErrorMessageOfString(this.value, this.schema, this.required,  this.locale)
+    },
+    // Searchable select methods
+    openSearchableDropdown() {
+      // Calculate position before opening
+      const ref = this.$refs.searchableSelectRef as HTMLElement | undefined
+      if (ref) {
+        const rect = ref.getBoundingClientRect()
+        this.dropdownPosition = {
+          top: rect.bottom + window.scrollY,
+          left: rect.left + window.scrollX,
+          width: rect.width
+        }
+      }
+      this.isSearchableDropdownOpen = true
+      this.searchQuery = ''
+      this.focusedOptionIndex = -1
+    },
+    closeSearchableDropdown() {
+      this.isSearchableDropdownOpen = false
+      this.searchQuery = null
+      this.focusedOptionIndex = -1
+    },
+    toggleSearchableDropdown() {
+      if (this.isSearchableDropdownOpen) {
+        this.closeSearchableDropdown()
+      } else {
+        this.openSearchableDropdown()
+      }
+    },
+    onSearchInput(e: Event | { target: { value: string } }) {
+      this.searchQuery = (e.target as HTMLInputElement).value
+      this.focusedOptionIndex = 0
+    },
+    selectSearchableOption(optionValue: string | number) {
+      this.updateSelection(optionValue)
+      this.closeSearchableDropdown()
+    },
+    selectFirstFilteredOption() {
+      if (this.filteredOptions.length > 0) {
+        const index = this.focusedOptionIndex >= 0 ? this.focusedOptionIndex : 0
+        const option = this.filteredOptions[index]
+        if (option) {
+          this.selectSearchableOption(option.value as string)
+        }
+      }
+    },
+    focusNextOption() {
+      if (this.focusedOptionIndex < this.filteredOptions.length - 1) {
+        this.focusedOptionIndex++
+      }
+    },
+    focusPrevOption() {
+      if (this.focusedOptionIndex > 0) {
+        this.focusedOptionIndex--
+      }
+    },
+    handleClickOutside(e: MouseEvent) {
+      if (!this.isSearchableDropdownOpen) return
+      const target = e.target as Node
+      // Check if click is inside the component
+      if (this.$el && this.$el.contains(target)) return
+      // Check if click is inside the teleported dropdown (has z-[9999] class)
+      const dropdown = document.querySelector('.fixed.z-\\[9999\\]')
+      if (dropdown && dropdown.contains(target)) return
+      this.closeSearchableDropdown()
+    }
+  },
+  computed: {
+    dropdownStyle(): { top: string; left: string; width: string } {
+      return {
+        top: `${this.dropdownPosition.top}px`,
+        left: `${this.dropdownPosition.left}px`,
+        width: `${this.dropdownPosition.width}px`
+      }
+    },
+    canPreviewImage(): boolean {
+      return common.isImageUrl(this.value + '') || common.isBase64Image(this.value + '')
+    },
+    canPreview(): boolean | undefined {
+      return (!!this.value) && (this.canPreviewImage)
+    },
+    useTextArea(): boolean | undefined {
+      return this.value !== undefined
+        && (this.schema.enum === undefined || this.isReadOnly)
+        && (this.schema.format === 'textarea')
+    },
+    useCodeEditor(): boolean | undefined {
+      return this.value !== undefined
+        && (this.schema.enum === undefined || this.isReadOnly)
+        && (this.schema.format === 'code' || this.schema.format === 'json')
+    },
+    useDatePicker(): boolean | undefined {
+      return this.value !== undefined && this.schema.format ==='date-time'
+    },
+    useInput(): boolean | undefined {
+      return this.value !== undefined
+        && (this.schema.enum === undefined || this.isReadOnly)
+        && !this.useTextArea
+        && !this.useCodeEditor
+    },
+    useSelect(): boolean {
+      return this.value !== undefined && this.schema.enum !== undefined && !this.isReadOnly
+    },
+    useSelectComponent(): boolean {
+      return this.useSelect
+    },
+    useRadioBoxComponent(): boolean {
+      return this.useSelect && this.schema.format === 'radiobox'
+    },
+    useSearchableSelect(): boolean {
+      return this.options.length > 20
+    },
+    filteredOptions(): { value: string | number; label: string | number }[] {
+      if (!this.searchQuery) return this.options
+      const query = this.searchQuery.toLowerCase()
+      return this.options.filter(opt =>
+        String(opt.label).toLowerCase().includes(query) ||
+        String(opt.value).toLowerCase().includes(query)
+      )
+    },
+    selectedOptionLabel(): string {
+      const selected = this.options.find(opt => opt.value === this.value)
+      return selected ? String(selected.label) : ''
+    },
+    getImageUrl(): string | undefined {
+      return this.value
+    },
+    isReadOnly(): boolean | undefined {
+      return this.readonly || this.schema.readonly
+    },
+    isSecret(): boolean {
+      return this.schema.secret === true
+    },
+    hasDeleteButtonFunction(): boolean {
+      return this.hasDeleteButton && !this.isReadOnly
+    },
+    willPreviewImage(): boolean | '' | undefined {
+      return this.value && this.canPreviewImage
+    },
+    titleToShow(): string {
+      return common.getTitle(this.schema.title, this.title)
+    },
+    options(): {
+      value: string | number;
+      label: string | number;
+    }[] {
+      return common.getOptions(this.schema)
+    },
+    canUpload(): boolean {
+      return this.schema.format === 'base64'
+    },
+    className(): string {
+      const rowClass = this.errorMessage ? this.theme.errorRow : this.theme.row
+      return this.schema.className ? rowClass + ' ' + this.schema.className : rowClass
+    },
+    isMixedExpression(): boolean {
+      // Mixed expression: value contains {{...}} but isn't a pure expression
+      // e.g., "Hello {{$.name}}" or '{"text": "{{$.error}}"}'
+      if (this.expression) return false // Pure expression, not mixed
+      const val = this.initialValue
+      if (typeof val !== 'string') return false
+      return val.includes('{{') && val.includes('}}')
+    },
+    embeddedExpressions(): string[] {
+      // Extract all {{...}} expressions from mixed content
+      if (!this.isMixedExpression) return []
+      const val = this.value || ''
+      const matches: string[] = []
+      const regex = /\{\{(.+?)\}\}/g
+      let match
+      while ((match = regex.exec(val)) !== null) {
+        if (match[1]) {
+          matches.push(match[1])
+        }
+      }
+      return matches
+    },
+  }
+})
+</script>
