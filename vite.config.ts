@@ -30,6 +30,8 @@ export default defineConfig({
         '@heroicons/vue',
         '@heroicons/vue/24/outline',
         '@heroicons/vue/24/solid',
+        '@vue-flow/core',
+        '@vue-flow/controls',
         '@vueuse/core',
         'lodash',
         'vue-json-pretty',
