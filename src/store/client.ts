@@ -1,4 +1,6 @@
-// The backend seam for the flow editor.
+// The backend seam for the flow editor, plus the provide/inject wiring the
+// workspace components use to reach it (in place of the platform's
+// useNuxtApp().$grpc and useAuthStore()).
 //
 // The editor is deliberately proto-free: it never imports generated gRPC /
 // connect-es code. Instead each host builds its own transport-bound client and
@@ -84,10 +86,88 @@ export interface FlowClient {
   getFlowStream(req: GetFlowStreamRequest): AsyncIterable<any>
   saveMeta(req: SaveMetaRequest): Promise<any>
   saveFlow(req: SaveFlowRequest): Promise<any>
+  // Authoring surface used by the workspace panels (add-component palette,
+  // node settings, switchers, revisions, transfer, undeploy). Requests are
+  // loose objects (connect-es PartialMessage); responses stay `any`.
+  getComponents(req: any): Promise<any>
+  getFlowList(req: any): Promise<any>
+  createFlow(req: any): Promise<any>
+  export(req: any): Promise<any>
+  getFlowRevisions(req: any): Promise<any>
+  applyFlowRevision(req: any): Promise<any>
+  listScenarios(req: any): Promise<any>
+  deleteScenario(req: any): Promise<any>
+  createScenarioFromTrace(req: any): Promise<any>
+  transferNodes(req: any): Promise<any>
+  undeployFlow(req: any): Promise<any>
 }
 
-// The full client the host injects. Only `flow` is required today; `runs`,
-// `statistics` and `project` join here as the traces/widgets panels land.
+// project slice — configuration lookups (add-component form defaults).
+export interface ProjectClient {
+  getProjectConfiguration(req: any): Promise<any>
+}
+
+// runs slice — the durable-run panel.
+export interface RunsClient {
+  listRuns(req: any): Promise<any>
+  getRun(req: any): Promise<any>
+  rerunRun(req: any): Promise<any>
+  retryRun(req: any): Promise<any>
+}
+
+// statistics slice — traces + telemetry.
+export interface StatisticsClient {
+  getTraces(req: any): Promise<any>
+  getTraceByID(req: any): Promise<any>
+  getStream(req: any): AsyncIterable<any>
+}
+
+// The full client the host injects — the whole backend surface the editor
+// touches, four service slices, no more. Each host builds these from its own
+// transport (webapp → hosted API, tiny → local services) and injects them.
 export interface EditorClient {
   flow: FlowClient
+  project: ProjectClient
+  runs: RunsClient
+  statistics: StatisticsClient
+}
+
+// ── provide / inject ──────────────────────────────────────────────────────
+//
+// Workspace components read the client with useEditorClient() instead of the
+// platform's useNuxtApp().$grpc. The host provides it once at the top of the
+// editor tree.
+import type { InjectionKey } from 'vue'
+import { inject, provide } from 'vue'
+
+export const EDITOR_CLIENT: InjectionKey<EditorClient> = Symbol('editorClient')
+
+export function provideEditorClient(client: EditorClient): void {
+  provide(EDITOR_CLIENT, client)
+}
+
+export function useEditorClient(): EditorClient {
+  const client = inject(EDITOR_CLIENT, null)
+  if (!client) {
+    throw new Error('editor: no EditorClient provided — call provideEditorClient() in the host')
+  }
+  return client
+}
+
+// EditorContext carries the few host facts the editor needs that aren't the
+// backend client — chiefly the workspace the platform scopes component lookups
+// to. tiny has no workspaces, so it provides an empty context and the
+// components fall back sensibly.
+export interface EditorContext {
+  workspace?: any
+}
+
+export const EDITOR_CONTEXT: InjectionKey<EditorContext> = Symbol('editorContext')
+
+export function provideEditorContext(ctx: EditorContext): void {
+  provide(EDITOR_CONTEXT, ctx)
+}
+
+export function useEditorContext(): EditorContext {
+  return inject(EDITOR_CONTEXT, {})
 }
