@@ -67,7 +67,15 @@ export type {
 } from './store/client'
 
 // The full component tree lifted from the platform — the real inspector,
-// palette, switchers, runs, telemetry, traces and modals. FlowWorkspace (next)
+// palette, switchers, runs, telemetry, traces and modals. FlowWorkspace
 // composes these into the mountable editor; they're exported individually too
 // so a host can compose its own arrangement.
 export * from './flow'
+
+// The mountable, self-contained flow editor — assembles the lifted tree
+// (ControlPanel toolbar, FlowEditor canvas, edge-config panel, node inspector,
+// add-component palette, runs, telemetry, traces and modals) into the full
+// editor a host mounts as
+//   <FlowWorkspace :client="client" :project-name="p" :flow-name="f" />
+// The host injects its transport-bound EditorClient via the `client` prop.
+export { default as FlowWorkspace } from './FlowWorkspace.vue'
