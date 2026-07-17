@@ -27,12 +27,15 @@ export default defineConfig({
       // Consumers provide these — one shared copy, no duplicate Vue.
       external: [
         'vue',
+        'pinia',
         '@heroicons/vue',
         '@heroicons/vue/24/outline',
         '@heroicons/vue/24/solid',
         '@vue-flow/core',
         '@vue-flow/controls',
         '@vueuse/core',
+        '@bufbuild/protobuf',
+        'js-base64',
         'lodash',
         'vue-json-pretty',
         '@guolao/vue-monaco-editor',

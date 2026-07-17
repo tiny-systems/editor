@@ -31,20 +31,24 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "peerDependencies": {
+    "pinia": "^2.1.0 || ^3.0.0",
     "vue": "^3.4.0"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^1.10.0",
     "@guolao/vue-monaco-editor": "^1.6.0",
     "@heroicons/vue": "^2.1.5",
     "@vue-flow/controls": "^1.1.2",
     "@vue-flow/core": "^1.42.1",
     "@vueuse/core": "^13.0.0",
+    "js-base64": "^3.7.0",
     "lodash": "^4.17.21",
     "vue-json-pretty": "^2.4.0"
   },
   "devDependencies": {
     "@types/lodash": "^4.17.0",
     "@vitejs/plugin-vue": "^5.2.1",
+    "pinia": "^2.1.7",
     "typescript": "^5.6.0",
     "vite": "^6.0.7",
     "vue": "^3.5.13",

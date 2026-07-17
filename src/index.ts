@@ -22,3 +22,22 @@ export * from './json-editor/common'
 export { default as FlowPreview } from './canvas/FlowPreview.vue'
 export { default as TinyNode } from './canvas/TinyNode.vue'
 export { default as TinyEdge } from './canvas/TinyEdge.vue'
+
+// The flow store — the editor's data layer and the backend seam. A host builds
+// its own transport-bound client and injects it with setGrpcClient(); the
+// store never imports generated proto/connect code. EditorClient is the
+// contract that injected client must satisfy.
+export { useFlowStore } from './store/flow'
+export type {
+  EditorClient,
+  FlowClient,
+  AcquireFlowLockRequest,
+  ReleaseFlowLockRequest,
+  RunActionRequest,
+  InspectNodeRequest,
+  RunExpressionRequest,
+  GetFlowRequest,
+  GetFlowStreamRequest,
+  SaveMetaRequest,
+  SaveFlowRequest,
+} from './store/client'
