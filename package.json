@@ -28,7 +28,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "prepare": "vite build"
   },
   "peerDependencies": {
     "pinia": "^2.1.0 || ^3.0.0",

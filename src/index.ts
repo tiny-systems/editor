@@ -23,6 +23,11 @@ export { default as FlowPreview } from './canvas/FlowPreview.vue'
 export { default as TinyNode } from './canvas/TinyNode.vue'
 export { default as TinyEdge } from './canvas/TinyEdge.vue'
 
+// FlowEditor is the store-backed editable surface — hand it a transport-bound
+// EditorClient and a flow to open, and it loads, live-streams and renders the
+// pannable canvas with a click-to-inspect panel. This is what a host mounts.
+export { default as FlowEditor } from './canvas/FlowEditor.vue'
+
 // The flow store — the editor's data layer and the backend seam. A host builds
 // its own transport-bound client and injects it with setGrpcClient(); the
 // store never imports generated proto/connect code. EditorClient is the
