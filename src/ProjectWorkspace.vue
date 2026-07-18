@@ -776,7 +776,9 @@ const activity = useActivityStore()
 const _navigateTo = navigateTo
 
 // State
-const tab = ref('theater')
+// Default to the Flows tab — it's the primary content (and where the editor's
+// back button should land), not the activity feed.
+const tab = ref('flows')
 const loading = ref(false)
 const loadingStatus = ref('')
 const connected = ref(false)
