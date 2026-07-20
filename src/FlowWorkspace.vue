@@ -1711,8 +1711,12 @@ watch(selectedHandle, async (v) => {
   }
 })
 
-// Watch control handle for real-time updates (status, start/stop)
-watch(() => store.selectedControl, () => {
+// Watch control handle for real-time updates (status, start/stop). Watches the
+// SCHEMA too, not just the configuration: a Send↔Reset style flip is a schema
+// change (different button field) that often leaves the configuration value
+// unchanged — without watching the schema the button label goes stale until the
+// node is re-selected.
+watch(() => [store.selectedControl, store.controlHandleSchema], () => {
   if (formFocused.value) {
     pendingControlUpdate.value = true
     return
