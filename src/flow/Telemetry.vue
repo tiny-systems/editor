@@ -36,8 +36,14 @@
       </div>
     </div>
 
-    <!-- Collapsible content -->
-    <div v-if="embedded || !isCollapsed" :class="['relative overflow-hidden', hasData && embedded ? 'min-h-72 h-[30vh]' : '']" :style="hasData && !embedded ? { height: 'var(--exec-h, 30vh)' } : undefined">
+    <!-- Collapsible content.
+         Height is deliberately NOT gated on hasData: that flag means "the
+         chart has series", but the trace LIST renders either way. Gating on it
+         left the panel entirely unconstrained whenever traces existed without
+         chart data, so it grew to fit every row and swallowed the canvas — and
+         it made the drag handle look broken, because it kept updating
+         --exec-h while nothing consumed it. -->
+    <div v-if="embedded || !isCollapsed" :class="['relative overflow-hidden', embedded ? 'min-h-72 h-[30vh]' : '']" :style="!embedded ? { height: 'var(--exec-h, 25vh)' } : undefined">
       <InlineOverlay v-if="!connected" hide-loading>
         <div class="flex items-center gap-3">
           <span class="text-red-500">{{ error || 'Connection lost.' }}</span>

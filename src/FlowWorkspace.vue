@@ -1311,7 +1311,13 @@ const execRowRef = ref<HTMLElement | null>(null)
 onMounted(() => {
   execCollapsed.value = localStorage.getItem('flow.exec.collapsed') === '1'
   const h = parseInt(localStorage.getItem('flow.exec.h') || '', 10)
-  if (!isNaN(h)) execHeight.value = Math.min(Math.max(h, 140), Math.round(window.innerHeight * 0.8))
+  if (!isNaN(h)) {
+    execHeight.value = Math.min(Math.max(h, 140), Math.round(window.innerHeight * 0.8))
+  } else {
+    // A quarter of the viewport, not a fixed 320px: the canvas is what's being
+    // worked on, so the executions strip should read as a footer at any size.
+    execHeight.value = Math.max(Math.round(window.innerHeight * 0.25), 140)
+  }
   const pct = parseInt(localStorage.getItem('flow.exec.runsPct') || '', 10)
   if (!isNaN(pct)) runsPct.value = Math.min(Math.max(pct, 15), 75)
 })
