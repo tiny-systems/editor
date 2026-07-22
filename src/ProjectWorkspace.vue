@@ -778,7 +778,62 @@ const _navigateTo = navigateTo
 // State
 // Default to the Flows tab — it's the primary content (and where the editor's
 // back button should land), not the activity feed.
-const tab = ref('flows')
+const TABS = ['theater', 'widgets', 'flows'] as const
+type TabName = (typeof TABS)[number]
+
+const tab = ref<TabName>('flows')
+
+// --- Tab routing ---------------------------------------------------------
+// The selected tab is mirrored into the URL (?tab=…) so a view is linkable,
+// survives a refresh, and answers browser back/forward.
+//
+// Deliberately the History API rather than vue-router: this component ships
+// inside three different hosts (tiny's local SPA, the platform Nuxt app, the
+// desktop client). Depending on a router would force one on hosts that don't
+// have it and fight the one in hosts that do. A query param is also safer
+// than a hash, which would collide with hash-based host routing.
+
+const isBrowser = () => typeof window !== 'undefined'
+
+function tabFromURL(): TabName | null {
+  if (!isBrowser()) return null
+  const value = new URLSearchParams(window.location.search).get('tab')
+  return (TABS as readonly string[]).includes(value ?? '') ? (value as TabName) : null
+}
+
+// Set while adopting a tab that came FROM the URL, so the watcher below
+// doesn't push a second history entry for a navigation the browser just made.
+let applyingFromURL = false
+
+function adopt(name: TabName) {
+  applyingFromURL = true
+  tab.value = name
+  nextTick(() => {
+    applyingFromURL = false
+  })
+}
+
+// replace=true canonicalises the initial URL without adding a history entry —
+// otherwise the first Back press would just strip the query and look broken.
+function syncTabToURL(name: TabName, replace = false) {
+  if (!isBrowser()) return
+  const url = new URL(window.location.href)
+  if (url.searchParams.get('tab') === name) return
+  url.searchParams.set('tab', name)
+  window.history[replace ? 'replaceState' : 'pushState']({ tab: name }, '', url)
+}
+
+function onPopState() {
+  // No ?tab= (e.g. stepped back past our first entry) → fall back to the
+  // default rather than stranding the user on whatever was last shown.
+  const next = tabFromURL() ?? 'flows'
+  if (next !== tab.value) adopt(next)
+}
+
+watch(tab, (next) => {
+  if (applyingFromURL) return // came from the URL; history already reflects it
+  syncTabToURL(next)
+})
 const loading = ref(false)
 const loadingStatus = ref('')
 const connected = ref(false)
@@ -1506,6 +1561,16 @@ watch(() => props.projectName, (newVal, oldVal) => {
 })
 
 onMounted(() => {
+  // Adopt the tab named in the URL so a shared link / refresh lands on the
+  // right view; otherwise stamp the default so the URL is always explicit.
+  const urlTab = tabFromURL()
+  if (urlTab) {
+    adopt(urlTab)
+  } else {
+    syncTabToURL(tab.value, true)
+  }
+  if (isBrowser()) window.addEventListener('popstate', onPopState)
+
   // Initialize GridStack
   initGrid()
   // Load current project (single project per session — no project list)
@@ -1519,6 +1584,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (isBrowser()) window.removeEventListener('popstate', onPopState)
   if (streamAbort) {
     streamAbort.abort()
   }
