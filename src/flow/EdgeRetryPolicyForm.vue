@@ -4,9 +4,13 @@
 
   Defaults preserve the no-implicit-retry contract: MaxAttempts = 1
   (single shot). Authors opt in per edge for retry-safe targets
-  (webhooks, idempotent writes). NonRetryableErrorCodes short-circuit
-  the loop regardless of MaxAttempts — components signal these via
-  module.NonRetryable(code, err) in the SDK.
+  (webhooks, idempotent writes).
+
+  Errors a module marks permanent (module.NonRetryable(code, err) /
+  PermanentError) are skipped by the scheduler automatically — the
+  author never lists them. So the codes field is an advanced override
+  for ADDITIONAL codes only, and shows only once retries are enabled
+  (MaxAttempts > 1); on a single-shot edge it's irrelevant.
 
   Persists onto edge.data.retryPolicy; the backend reads it from
   TinyNodeEdge.RetryPolicy when scheduling re-dispatch.
@@ -89,20 +93,21 @@
             class="w-20 px-1.5 py-0.5 text-xs border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700"
           />
         </div>
-      </template>
 
-      <div>
-        <div class="text-gray-700 dark:text-gray-300 mb-1">Non-retryable codes <span class="text-gray-400 dark:text-gray-500 font-normal">(comma-separated)</span></div>
-        <input
-          type="text"
-          :value="nonRetryableInput"
-          @input="onCodesInput(($event.target as HTMLInputElement).value)"
-          @blur="commitCodes"
-          placeholder="quota_exceeded, unauthorized, content_filter"
-          :disabled="disabled"
-          class="w-full px-1.5 py-0.5 text-xs border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700"
-        />
-      </div>
+        <div class="pt-1">
+          <div class="text-gray-700 dark:text-gray-300 mb-0.5">Also skip retry for codes <span class="text-gray-400 dark:text-gray-500 font-normal">(optional, comma-separated)</span></div>
+          <div class="text-gray-400 dark:text-gray-500 mb-1 leading-snug">Errors a module marks permanent — auth, quota, content-filter — are never retried automatically; you don't list them. Use this only to force-skip retry for extra codes.</div>
+          <input
+            type="text"
+            :value="nonRetryableInput"
+            @input="onCodesInput(($event.target as HTMLInputElement).value)"
+            @blur="commitCodes"
+            placeholder=""
+            :disabled="disabled"
+            class="w-full px-1.5 py-0.5 text-xs border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700"
+          />
+        </div>
+      </template>
     </div>
   </div>
 </template>
