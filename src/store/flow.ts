@@ -565,6 +565,50 @@ const useFlowStore = defineStore({
       })
       await this.save()
     },
+    // _subscribeFlowStream opens a GetFlowStream and consumes it, first aborting
+    // any previous stream via a real AbortController — not a boolean flag.
+    //
+    // The flag-only cancel this replaced never tore down the HTTP request: the
+    // old stream's `for await` stayed parked until the server's next message, so
+    // its connection lingered. Rapidly switching trace/run/scenario (a few fast
+    // trace clicks) parked several flow streams at once; on tiny's HTTP/1.1
+    // transport that exhausts the browser's ~6-connection-per-origin pool and
+    // wedges the tab — the hosted platform survives the same code only because
+    // HTTP/2 multiplexes. Aborting releases the connection immediately.
+    _subscribeFlowStream(req: any) {
+      // tear down the previous stream's connection right now
+      this.streamCancel?.()
+
+      const abort = new AbortController()
+      this.streamCancel = () => abort.abort()
+
+      const stream = this.grpcClient.flow.getFlowStream(req, { signal: abort.signal })
+
+      ;(async () => {
+        try {
+          for await (const response of stream) {
+            if (abort.signal.aborted) break
+            // Mark as connected on first successful response
+            if (!this.streamConnected) {
+              this.streamConnected = true
+              this.streamError = ''
+            }
+            this.processStreamResponse(response)
+          }
+          // Stream ended without error (server closed it)
+          if (!abort.signal.aborted) {
+            this.streamConnected = false
+            this.streamError = 'Stream closed by server'
+          }
+        } catch (e: any) {
+          if (!abort.signal.aborted) {
+            this.streamConnected = false
+            this.streamError = e.message || 'Stream connection lost'
+            console.error('Stream error:', e)
+          }
+        }
+      })()
+    },
     async getStream(flowName: string, projectName: string): Promise<any> {
       if (!this.grpcClient) {
         throw new Error('gRPC client not initialized')
@@ -576,43 +620,13 @@ const useFlowStore = defineStore({
       this.streamError = ''
       this.startAnimationCheck()
 
-      const stream = this.grpcClient.flow.getFlowStream({
+      this._subscribeFlowStream({
         FlowName: flowName,
         ProjectName: projectName,
         ...(this.trace ? { TraceID: this.trace } : {}),
         ...(this.scenario ? { ScenarioName: this.scenario } : {}),
         ...(this.run ? { RunID: this.run } : {})
       })
-
-      let cancelled = false
-      this.streamCancel = () => {
-        cancelled = true
-      }
-
-      ;(async () => {
-        try {
-          for await (const response of stream) {
-            if (cancelled) break
-            // Mark as connected on first successful response
-            if (!this.streamConnected) {
-              this.streamConnected = true
-              this.streamError = ''
-            }
-            this.processStreamResponse(response)
-          }
-          // Stream ended without error (server closed it)
-          if (!cancelled) {
-            this.streamConnected = false
-            this.streamError = 'Stream closed by server'
-          }
-        } catch (e: any) {
-          if (!cancelled) {
-            this.streamConnected = false
-            this.streamError = e.message || 'Stream connection lost'
-            console.error('Stream error:', e)
-          }
-        }
-      })()
 
       return {
         on: (event: string, callback: Function) => {},
@@ -827,37 +841,11 @@ const useFlowStore = defineStore({
       this.streamError = ''
       this.startAnimationCheck()
 
-      const stream = this.grpcClient.flow.getFlowStream({
+      this._subscribeFlowStream({
         FlowName: this.flowResourceName,
         ProjectName: this.projectResourceName,
         ...(this.run ? { RunID: this.run } : {})
       })
-
-      let cancelled = false
-      this.streamCancel = () => { cancelled = true }
-
-      ;(async () => {
-        try {
-          for await (const response of stream) {
-            if (cancelled) break
-            if (!this.streamConnected) {
-              this.streamConnected = true
-              this.streamError = ''
-            }
-            this.processStreamResponse(response)
-          }
-          if (!cancelled) {
-            this.streamConnected = false
-            this.streamError = 'Stream closed by server'
-          }
-        } catch (e: any) {
-          if (!cancelled) {
-            this.streamConnected = false
-            this.streamError = e.message || 'Stream connection lost'
-            console.error('Stream error:', e)
-          }
-        }
-      })()
     },
     // Apply trace without full reload - just restart stream with new trace ID
     async applyTrace(traceId: string | null): Promise<void> {
@@ -887,41 +875,13 @@ const useFlowStore = defineStore({
       this.streamError = ''
       this.startAnimationCheck()
 
-      const stream = this.grpcClient.flow.getFlowStream({
+      this._subscribeFlowStream({
         FlowName: this.flowResourceName,
         ProjectName: this.projectResourceName,
         ...(this.trace ? { TraceID: this.trace } : {}),
         ...(this.scenario ? { ScenarioName: this.scenario } : {}),
         ...(this.run ? { RunID: this.run } : {})
       })
-
-      let cancelled = false
-      this.streamCancel = () => {
-        cancelled = true
-      }
-
-      ;(async () => {
-        try {
-          for await (const response of stream) {
-            if (cancelled) break
-            if (!this.streamConnected) {
-              this.streamConnected = true
-              this.streamError = ''
-            }
-            this.processStreamResponse(response)
-          }
-          if (!cancelled) {
-            this.streamConnected = false
-            this.streamError = 'Stream closed by server'
-          }
-        } catch (e: any) {
-          if (!cancelled) {
-            this.streamConnected = false
-            this.streamError = e.message || 'Stream connection lost'
-            console.error('Stream error:', e)
-          }
-        }
-      })()
     },
     // Apply scenario - restart stream with scenario data for edge validation
     async applyScenario(scenarioName: string | null): Promise<void> {
@@ -949,41 +909,13 @@ const useFlowStore = defineStore({
       this.streamError = ''
       this.startAnimationCheck()
 
-      const stream = this.grpcClient.flow.getFlowStream({
+      this._subscribeFlowStream({
         FlowName: this.flowResourceName,
         ProjectName: this.projectResourceName,
         ...(this.trace ? { TraceID: this.trace } : {}),
         ...(this.scenario ? { ScenarioName: this.scenario } : {}),
         ...(this.run ? { RunID: this.run } : {})
       })
-
-      let cancelled = false
-      this.streamCancel = () => {
-        cancelled = true
-      }
-
-      ;(async () => {
-        try {
-          for await (const response of stream) {
-            if (cancelled) break
-            if (!this.streamConnected) {
-              this.streamConnected = true
-              this.streamError = ''
-            }
-            this.processStreamResponse(response)
-          }
-          if (!cancelled) {
-            this.streamConnected = false
-            this.streamError = 'Stream closed by server'
-          }
-        } catch (e: any) {
-          if (!cancelled) {
-            this.streamConnected = false
-            this.streamError = e.message || 'Stream connection lost'
-            console.error('Stream error:', e)
-          }
-        }
-      })()
     },
     setMeta(meta: Object) {
       this.meta = meta
