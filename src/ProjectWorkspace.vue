@@ -1234,6 +1234,17 @@ const listenStream = async () => {
               widgets.value[index] = widgetData
             }
           }
+        } else if (event.Type === 'DELETE_WIDGET') {
+          // A dashboard node was deleted (or lost its label): drop its widget
+          // live, so it can't linger the way it did with the old widget store.
+          const wid = (event.Widget as any)?.ID || (event.Widget as any)?.id
+          const idx = widgets.value.findIndex(w => w.ID === wid)
+          if (idx !== -1) {
+            if (grid) {
+              try { grid.removeWidget(`#${wid}`, false) } catch (e) {}
+            }
+            widgets.value.splice(idx, 1)
+          }
         }
       }
     }
