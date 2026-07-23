@@ -14,9 +14,18 @@
           <span v-if="items.length > 0" class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded">
             {{ items.length }} traces
           </span>
-          <span v-if="totalErrors > 0" class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded">
+          <button
+            v-if="totalErrors > 0"
+            type="button"
+            @click.stop="errorsOnly = !errorsOnly"
+            :title="errorsOnly ? 'Showing only traces with errors — click to show all' : 'Show only traces with errors'"
+            :class="['px-1.5 py-0.5 rounded transition-colors cursor-pointer',
+                     errorsOnly
+                       ? 'bg-red-600 text-white ring-1 ring-red-700'
+                       : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-800']"
+          >
             {{ totalErrors }} errors
-          </span>
+          </button>
         </div>
       </div>
       <div class="flex items-center gap-1">
@@ -67,7 +76,7 @@
           <div class="flex flex-col h-full m-auto overflow-y-scroll bg-gray-500/5 font-mono dark:text-gray-300" ref="scroller">
             <table>
               <tr v-if="items.length === 0"><td class="text-center text-xs p-3 dark:text-gray-500">No activity. The trace list is empty.</td></tr>
-              <tr :class="['text-left text-xs hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer', trace && item.ID == trace ? 'bg-gray-300 dark:bg-gray-700' : '']" v-for="item in items" :key="item.ID" @click="selectTrace(item)">
+              <tr :class="['text-left text-xs hover:bg-gray-200 dark:hover:bg-gray-800 cursor-pointer', trace && item.ID == trace ? 'bg-gray-300 dark:bg-gray-700' : '']" v-for="item in visibleItems" :key="item.ID" @click="selectTrace(item)">
                 <td><span class="p-1 block" :title="item.ID">{{ item.ID }}</span></td>
                 <td><span class="p-1 block">{{ formatTime(new Date(Number(item.Start) / 1000)) }}</span></td>
                 <td><span class="p-1 block"><TimeAgo :datetime="Number(item.End) / 1000" :auto-update="true" /></span></td>
@@ -184,6 +193,20 @@ export default defineComponent({
     const hasData = computed(() => seriesNames.value.length > 0)
 
     // Metrics summary for header
+    // Clicking the errors badge filters the list instead of collapsing the
+    // panel. The badge sits inside the header's collapse handler, so it had no
+    // handler of its own and every click just toggled the whole section — it
+    // looked like a filter and behaved like a chevron.
+    //
+    // Filtering is client-side: GetTraces takes no errors argument, so this
+    // narrows what has been loaded rather than re-querying.
+    const errorsOnly = ref(false)
+    const visibleItems = computed(() =>
+      errorsOnly.value
+        ? items.value.filter((i: any) => Number(i.Errors || 0) > 0)
+        : items.value
+    )
+
     const totalErrors = computed(() => {
       return items.value.reduce((sum, item) => sum + Number(item.Errors || 0), 0)
     })
@@ -517,6 +540,8 @@ export default defineComponent({
       connected,
       hasData,
       totalErrors,
+      errorsOnly,
+      visibleItems,
       chartOption,
       isDark,
       formatDuration,
