@@ -1,5 +1,5 @@
 // @ts-ignore
-import {isObject, isInteger, toNumber, toInteger} from 'lodash'
+import {isObject, isInteger, toNumber, toInteger} from 'lodash-es'
 export const buttonGroupStyleString = "margin-left: 10px";
 export const imagePreviewStyleString = "";
 export { toNumber, toInteger }

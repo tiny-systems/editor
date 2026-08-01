@@ -128,7 +128,7 @@ import BooleanEditor from './BooleanEditor.vue'
 import NullEditor from './NullEditor.vue'
 import NumberEditor from './NumberEditor.vue'
 import StringEditor from './StringEditor.vue'
-import {isObject} from 'lodash';
+import {isObject} from 'lodash-es';
 
 // Use defineAsyncComponent to break circular dependencies
 const AnyEditor = defineAsyncComponent(() => import('./AnyEditor.vue'))

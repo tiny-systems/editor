@@ -49,14 +49,14 @@
     "echarts": "^6.0.0",
     "gridstack": "^12.4.2",
     "js-base64": "^3.7.0",
-    "lodash": "^4.17.21",
+    "lodash-es": "^4.17.21",
     "notiwind": "^2.1.0",
     "vue-debounce": "^5.0.1",
     "vue-echarts": "^8.0.1",
     "vue-json-pretty": "^2.4.0"
   },
   "devDependencies": {
-    "@types/lodash": "^4.17.0",
+    "@types/lodash-es": "^4.17.12",
     "@vitejs/plugin-vue": "^5.2.1",
     "pinia": "^2.1.7",
     "typescript": "^5.6.0",
