@@ -375,8 +375,15 @@ export default {
 .vue-flow__edge path {
   stroke: #ccc;
 }
+/* Own the busy-edge animation instead of relying on Vue Flow's bundled
+   stylesheet — a library update changing its defaults would kill the
+   effect silently. */
 .vue-flow__edge.animated path {
-
+  stroke-dasharray: 5;
+  animation: tiny-dashdraw 0.5s linear infinite;
+}
+@keyframes tiny-dashdraw {
+  from { stroke-dashoffset: 10; }
 }
 .flow-hidden .vue-flow__transformationpane {
   opacity: 0;
