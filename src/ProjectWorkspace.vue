@@ -1058,7 +1058,24 @@ const noteWidgetEdit = (id: string) => {
   recentlyEdited.value = { ...recentlyEdited.value, [id]: Date.now() }
 }
 
+// A widget whose schema declares a button is a FORM: the user fills it and
+// submits. Incoming node data must never rebuild it — that discards what
+// they typed and removes the submit button before their click lands, which
+// is exactly what made submitting appear to do nothing. Everything else is
+// a DISPLAY (debug panels, readouts) and must re-render on new data, which
+// is the whole reason it is on the dashboard.
+const isFormWidget = (widget: any) => {
+  const schema = getWidgetSchema(widget)
+  if (!schema) return false
+  try {
+    return JSON.stringify(schema).includes('"format":"button"')
+  } catch {
+    return false
+  }
+}
+
 const widgetRenderStamp = (widget: any) => {
+  if (isFormWidget(widget)) return 'form'
   if (editingWidget.value === widget.id) return 'editing'
   const edited = recentlyEdited.value[widget.id]
   if (edited && nowTick.value - edited < EDIT_FREEZE_MS) return 'editing'
