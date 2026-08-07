@@ -147,15 +147,16 @@
               <dd
                 :class="[
                   'text-3xl font-thin tracking-tight',
-                  Number(errorRate) > 0 || recentErrorAge ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'
+                  failedRuns > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'
                 ]"
-              >{{ errorRate }}</dd>
+              >{{ failedRuns }}</dd>
               <!-- A rate reads 0 seconds after a run fails, so a failed run
                    left no trace on this dashboard at all. The last-failure
                    line is what makes a discrete failure visible. -->
-              <span v-if="recentErrorAge" class="text-[11px] text-red-600 dark:text-red-400">
-                last failure {{ recentErrorAge }}
+              <span v-if="failedRuns > 0" class="text-[11px] text-red-600 dark:text-red-400">
+                failed run{{ failedRuns === 1 ? '' : 's' }}<template v-if="recentErrorAge">, last {{ recentErrorAge }}</template>
               </span>
+              <span v-else class="text-[11px] text-gray-400 dark:text-gray-500">last {{ ERROR_WINDOW_MIN }} min</span>
             </div>
             <div class="flex flex-col gap-1 px-5 py-5">
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Resources</dt>
@@ -874,18 +875,60 @@ const dashboardPage = ref<string | null>(null)
 
 const traceRate = ref<string | null>(null)
 const errorRate = ref<string | null>(null)
-// When a run last produced error spans. The rate alone drops back to 0
-// within a second, so without this a failed run is invisible here.
+
+// Failed runs, counted from the trace list rather than the statistics
+// stream. The stream reports a per-second rate that falls back to 0 within
+// a second of a run failing, and tiny's local backend does not emit those
+// metrics at all — so a run that failed left no mark anywhere on this
+// dashboard. This asks the same GetTraces the telemetry panel already uses,
+// on a slow cadence and only while the dashboard is open.
+const ERROR_WINDOW_MIN = 15
+const failedRuns = ref(0)
 const lastErrorAt = ref<number | null>(null)
 const nowTick = ref(Date.now())
 let nowTimer: ReturnType<typeof setInterval> | null = null
+let failureTimer: ReturnType<typeof setInterval> | null = null
+
 const recentErrorAge = computed(() => {
   if (!lastErrorAt.value) return ''
   const secs = Math.max(0, Math.round((nowTick.value - lastErrorAt.value) / 1000))
-  if (secs > 15 * 60) return ''
+  if (secs > ERROR_WINDOW_MIN * 60) return ''
   if (secs < 60) return 'just now'
   return `${Math.round(secs / 60)}m ago`
 })
+
+const refreshFailedRuns = async () => {
+  if (!props.projectName) return
+  const end = Date.now()
+  const start = end - ERROR_WINDOW_MIN * 60 * 1000
+  try {
+    const resp: any = await client.statistics.getTraces({
+      ProjectName: props.projectName,
+      Offset: BigInt(0),
+      Start: BigInt(start),
+      End: BigInt(end)
+    })
+    const traces = resp?.Traces || []
+    let failed = 0
+    let latest = 0
+    for (const t of traces) {
+      if (Number(t.Errors) > 0) {
+        failed++
+        const ts = Number(t.Timestamp || t.Start || 0)
+        if (ts > latest) latest = ts
+      }
+    }
+    failedRuns.value = failed
+    if (latest > 0) {
+      // Trace timestamps arrive in ms or µs depending on the backend.
+      lastErrorAt.value = latest > 1e14 ? Math.round(latest / 1000) : latest
+    } else if (failed === 0) {
+      lastErrorAt.value = null
+    }
+  } catch {
+    // A dashboard tile is not worth a toast; the flows tab reports properly.
+  }
+}
 const locale = ref(defaultLocale) // For json-editor
 
 // Projects list sidebar
@@ -1624,6 +1667,8 @@ watch(() => props.projectName, (newVal, oldVal) => {
 
 onMounted(() => {
   nowTimer = setInterval(() => { nowTick.value = Date.now() }, 15000)
+  refreshFailedRuns()
+  failureTimer = setInterval(refreshFailedRuns, 20000)
   // Adopt the tab named in the URL so a shared link / refresh lands on the
   // right view; otherwise stamp the default so the URL is always explicit.
   const urlTab = tabFromURL()
@@ -1648,6 +1693,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (nowTimer) { clearInterval(nowTimer); nowTimer = null }
+  if (failureTimer) { clearInterval(failureTimer); failureTimer = null }
   if (isBrowser()) window.removeEventListener('popstate', onPopState)
   if (streamAbort) {
     streamAbort.abort()
