@@ -268,6 +268,8 @@
             <div class="grid-stack">
               <Widget v-for="widget in widgets" :key="widget.id" :data="widget" :pages="dashboardPages"
                       :is-editing="isLayoutEditing"
+                      @focusin="editingWidget = widget.id"
+                      @focusout="releaseWidgetFocus(widget.id)"
                       @edit-schema="editWidget" @reset-schema="e => showResetSchema = e">
                 <!-- A widget's form is built from its node's published port
                      schema, which only exists once the node has reconciled.
@@ -282,8 +284,8 @@
                 <JsonEditor
                   v-else
                   :schema="getWidgetSchema(widget)"
-                  :key="widget.id + '-' + (widget._updateTime || 0)"
-                  @update-value="sendSignal($event, widget.node, widget.port)"
+                  :key="widget.id + '-' + widgetRenderStamp(widget)"
+                  @update-value="noteWidgetEdit(widget.id); sendSignal($event, widget.node, widget.port)"
                   :has-delete-button="false"
                   :plain-struct="true"
                   class="w-full"
@@ -1020,6 +1022,49 @@ const checkAccess = (accessMap: any, key: string, defaultValue: boolean = false)
 
 // Get widget schema (uses schema if set, otherwise defaultSchema)
 // Handles $ref definitions like the original getSchema function
+// Which widget the user is currently interacting with, and the render stamp
+// that keeps it mounted while they are.
+//
+// The form is keyed on the widget's last-update time so incoming data
+// re-renders it. That also remounts it mid-interaction: a node's status
+// changes constantly while a flow runs, and a click that lands between
+// mousedown and mouseup on a button that got unmounted is simply lost —
+// which is why submitting a widget reliably needed two clicks. While focus
+// is inside a widget its key is frozen; the pending data is picked up as
+// soon as focus leaves.
+const editingWidget = ref<string | null>(null)
+let releaseFocusTimer: ReturnType<typeof setTimeout> | null = null
+
+const releaseWidgetFocus = (id: string) => {
+  // focusout fires before focusin when moving between fields of the same
+  // form, so settle on the next tick rather than dropping the freeze
+  // between every keystroke and the Send button.
+  if (releaseFocusTimer) clearTimeout(releaseFocusTimer)
+  releaseFocusTimer = setTimeout(() => {
+    if (editingWidget.value === id) editingWidget.value = null
+  }, 150)
+}
+
+// Any local edit also freezes the form briefly. Focus events are the
+// obvious signal, but they do not fire for every way a value can change,
+// and the failure they guard against is severe: an incoming update
+// rebuilds the form mid-interaction, discarding what was typed and
+// removing the submit button before the click lands.
+const recentlyEdited = ref<Record<string, number>>({})
+const EDIT_FREEZE_MS = 4000
+
+const noteWidgetEdit = (id: string) => {
+  if (!id) return
+  recentlyEdited.value = { ...recentlyEdited.value, [id]: Date.now() }
+}
+
+const widgetRenderStamp = (widget: any) => {
+  if (editingWidget.value === widget.id) return 'editing'
+  const edited = recentlyEdited.value[widget.id]
+  if (edited && nowTick.value - edited < EDIT_FREEZE_MS) return 'editing'
+  return widget._updateTime || 0
+}
+
 // A widget can only render a form once its node published a port schema.
 const widgetHasSchema = (widget: any) => {
   const schema = getWidgetSchema(widget)
@@ -1666,7 +1711,9 @@ watch(() => props.projectName, (newVal, oldVal) => {
 })
 
 onMounted(() => {
-  nowTimer = setInterval(() => { nowTick.value = Date.now() }, 15000)
+  // Drives both the "last failure" label and the post-edit render freeze,
+  // so it ticks at the freeze's resolution rather than the label's.
+  nowTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
   refreshFailedRuns()
   failureTimer = setInterval(refreshFailedRuns, 20000)
   // Adopt the tab named in the URL so a shared link / refresh lands on the
@@ -1694,6 +1741,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (nowTimer) { clearInterval(nowTimer); nowTimer = null }
   if (failureTimer) { clearInterval(failureTimer); failureTimer = null }
+  if (releaseFocusTimer) { clearTimeout(releaseFocusTimer); releaseFocusTimer = null }
   if (isBrowser()) window.removeEventListener('popstate', onPopState)
   if (streamAbort) {
     streamAbort.abort()
