@@ -135,15 +135,27 @@
               </dt>
               <dd class="text-3xl font-thin tracking-tight text-gray-900 dark:text-gray-100" title="Traces per second">{{ traceRate }}</dd>
             </div>
-            <div class="flex flex-col gap-1 px-5 py-5">
+            <div
+              @click="tab = 'flows'"
+              :class="[
+                'flex flex-col gap-1 px-5 py-5 transition-colors',
+                'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900'
+              ]"
+              title="Open flows to read the failing trace"
+            >
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Errors</dt>
               <dd
                 :class="[
                   'text-3xl font-thin tracking-tight',
-                  Number(errorRate) > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'
+                  Number(errorRate) > 0 || recentErrorAge ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'
                 ]"
-                title="Spans with error attr per second"
               >{{ errorRate }}</dd>
+              <!-- A rate reads 0 seconds after a run fails, so a failed run
+                   left no trace on this dashboard at all. The last-failure
+                   line is what makes a discrete failure visible. -->
+              <span v-if="recentErrorAge" class="text-[11px] text-red-600 dark:text-red-400">
+                last failure {{ recentErrorAge }}
+              </span>
             </div>
             <div class="flex flex-col gap-1 px-5 py-5">
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Resources</dt>
@@ -256,7 +268,18 @@
               <Widget v-for="widget in widgets" :key="widget.id" :data="widget" :pages="dashboardPages"
                       :is-editing="isLayoutEditing"
                       @edit-schema="editWidget" @reset-schema="e => showResetSchema = e">
+                <!-- A widget's form is built from its node's published port
+                     schema, which only exists once the node has reconciled.
+                     Freshly installed widgets therefore render as blank
+                     panels for a while, which reads as broken rather than
+                     as pending. -->
+                <div v-if="!widgetHasSchema(widget)"
+                     class="flex items-center gap-2 p-4 text-sm text-gray-500 dark:text-gray-400">
+                  <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-transparent dark:border-gray-600 dark:border-t-transparent"></span>
+                  Waiting for the node to start — its form appears once the module is running.
+                </div>
                 <JsonEditor
+                  v-else
                   :schema="getWidgetSchema(widget)"
                   :key="widget.id + '-' + (widget._updateTime || 0)"
                   @update-value="sendSignal($event, widget.node, widget.port)"
@@ -851,6 +874,18 @@ const dashboardPage = ref<string | null>(null)
 
 const traceRate = ref<string | null>(null)
 const errorRate = ref<string | null>(null)
+// When a run last produced error spans. The rate alone drops back to 0
+// within a second, so without this a failed run is invisible here.
+const lastErrorAt = ref<number | null>(null)
+const nowTick = ref(Date.now())
+let nowTimer: ReturnType<typeof setInterval> | null = null
+const recentErrorAge = computed(() => {
+  if (!lastErrorAt.value) return ''
+  const secs = Math.max(0, Math.round((nowTick.value - lastErrorAt.value) / 1000))
+  if (secs > 15 * 60) return ''
+  if (secs < 60) return 'just now'
+  return `${Math.round(secs / 60)}m ago`
+})
 const locale = ref(defaultLocale) // For json-editor
 
 // Projects list sidebar
@@ -942,6 +977,12 @@ const checkAccess = (accessMap: any, key: string, defaultValue: boolean = false)
 
 // Get widget schema (uses schema if set, otherwise defaultSchema)
 // Handles $ref definitions like the original getSchema function
+// A widget can only render a form once its node published a port schema.
+const widgetHasSchema = (widget: any) => {
+  const schema = getWidgetSchema(widget)
+  return !!schema && Object.keys(schema).length > 0
+}
+
 const getWidgetSchema = (widget: any, configure: boolean = false) => {
   if (!widget) return {}
   let schema = widget.schema || widget.Schema
@@ -999,6 +1040,15 @@ const sendSignal = async (event: any, nodeId: string, portName: string = '_contr
       PortName: portName,
       Data: new TextEncoder().encode(JSON.stringify(event.value))
     })
+    // Signals are fire-and-forget: the flow runs on the cluster and this
+    // call returns as soon as it is published. Without an acknowledgement
+    // a submitted form looks identical to a dead button, which is exactly
+    // how it read the first time anyone used this dashboard.
+    notify({
+      group: 'success',
+      title: 'Sent',
+      text: 'The flow is running. Watch Errors above, or open the flow for its trace.'
+    }, 4000)
   } catch (e: any) {
     notify({
       group: 'error',
@@ -1284,6 +1334,7 @@ const listenStatStream = async () => {
           traceRate.value = event.Value ? event.Value.toFixed(2) : null
         } else if (event.Metric === 'tiny_span_error_count') {
           errorRate.value = event.Value ? event.Value.toFixed(2) : null
+          if (event.Value) lastErrorAt.value = Date.now()
         }
       }
     }
@@ -1572,6 +1623,7 @@ watch(() => props.projectName, (newVal, oldVal) => {
 })
 
 onMounted(() => {
+  nowTimer = setInterval(() => { nowTick.value = Date.now() }, 15000)
   // Adopt the tab named in the URL so a shared link / refresh lands on the
   // right view; otherwise stamp the default so the URL is always explicit.
   const urlTab = tabFromURL()
@@ -1595,6 +1647,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (nowTimer) { clearInterval(nowTimer); nowTimer = null }
   if (isBrowser()) window.removeEventListener('popstate', onPopState)
   if (streamAbort) {
     streamAbort.abort()
