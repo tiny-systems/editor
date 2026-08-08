@@ -180,6 +180,10 @@ export default defineComponent({
     const start = ref(0)
     const end = ref(0)
     const offset = ref(0)
+    // Set once the list has been walked to its end, or a read failed: either
+    // way there is nothing to gain from asking for the next page again.
+    const exhausted = ref(false)
+    const lastLoadError = ref<string | null>(null)
     const error = ref('')
     const connected = ref(false)
     const isLoading = ref(false)
@@ -395,6 +399,8 @@ export default defineComponent({
 
       if (reset) {
         offset.value = 0
+        exhausted.value = false
+        lastLoadError.value = null
       }
 
       try {
@@ -408,14 +414,23 @@ export default defineComponent({
         if (reset) {
           items.value = []
         }
-        items.value.push(...(resp.Traces || []))
-        offset.value = Number(resp.Offset) + Number(resp.Total)
+        const page = resp.Traces || []
+        items.value.push(...page)
+        // A short page is the end of the list. Without this the cursor keeps
+        // advancing past the end and every later request fails, which the
+        // panel then reports once per poll.
+        exhausted.value = page.length === 0
+        offset.value = Number(resp.Offset) + page.length
       } catch (e: any) {
-        notify({
-          group: 'error',
-          title: 'Error',
-          text: e.message || 'unknown server error'
-        }, 999999)
+        // One notice per distinct failure. This fires on a poll loop, so
+        // repeating it buried the screen in identical toasts that never
+        // expired.
+        const text = e.message || 'unknown server error'
+        if (lastLoadError.value !== text) {
+          lastLoadError.value = text
+          notify({ group: 'error', title: 'Error', text }, 8000)
+        }
+        exhausted.value = true
       } finally {
         isLoading.value = false
       }
