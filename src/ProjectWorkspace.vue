@@ -899,17 +899,31 @@ const recentErrorAge = computed(() => {
   return `${Math.round(secs / 60)}m ago`
 })
 
+let failedRunsInFlight = false
+
 const refreshFailedRuns = async () => {
   if (!props.projectName) return
+  // One request at a time, and none while the tab is hidden. The trace
+  // backend is reached through a single shared port-forward that the flow
+  // render path also uses; a slow read there stalls everything, and a poller
+  // that keeps firing turns one slow read into a queue of them. That is the
+  // hang this dashboard is not allowed to cause.
+  if (failedRunsInFlight) return
+  if (typeof document !== 'undefined' && document.hidden) return
+  failedRunsInFlight = true
   const end = Date.now()
   const start = end - ERROR_WINDOW_MIN * 60 * 1000
+  // Bound the wait: a request that never returns must not hold the guard
+  // forever, or the tile stops updating for the rest of the session.
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), 5000)
   try {
     const resp: any = await client.statistics.getTraces({
       ProjectName: props.projectName,
       Offset: BigInt(0),
       Start: BigInt(start),
       End: BigInt(end)
-    })
+    }, { signal: abort.signal })
     const traces = resp?.Traces || []
     let failed = 0
     let latest = 0
@@ -929,6 +943,9 @@ const refreshFailedRuns = async () => {
     }
   } catch {
     // A dashboard tile is not worth a toast; the flows tab reports properly.
+  } finally {
+    clearTimeout(timer)
+    failedRunsInFlight = false
   }
 }
 const locale = ref(defaultLocale) // For json-editor
@@ -1732,7 +1749,7 @@ onMounted(() => {
   // so it ticks at the freeze's resolution rather than the label's.
   nowTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
   refreshFailedRuns()
-  failureTimer = setInterval(refreshFailedRuns, 20000)
+  failureTimer = setInterval(refreshFailedRuns, 30000)
   // Adopt the tab named in the URL so a shared link / refresh lands on the
   // right view; otherwise stamp the default so the URL is always explicit.
   const urlTab = tabFromURL()
