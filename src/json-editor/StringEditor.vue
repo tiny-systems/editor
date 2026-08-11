@@ -32,6 +32,10 @@
         </label>
         <span v-if="uploadError" class="text-xs text-red-500">{{ uploadError }}</span>
       </div>
+      <!-- Prose a flow produced: rendered, not offered for editing. An
+           answer in a one-line input is unreadable and implies it can be
+           typed into, which it cannot. -->
+      <markdown-view v-if="useMarkdown" :value="value" class="w-full" />
       <div v-if="useTextArea && isSecret && !secretVisible" class="relative w-full">
         <textarea
           :class="[errorMessage ? theme.errorTextarea : theme.textarea, 'text-transparent dark:text-transparent select-none']"
@@ -202,6 +206,7 @@ import type { PropType } from 'vue'
 import { defineAsyncComponent } from 'vue'
 import * as common from './common'
 import {XCircleIcon, ChevronRightIcon, ChevronDownIcon, PencilIcon, EyeIcon, EyeSlashIcon, LockClosedIcon} from '@heroicons/vue/24/outline'
+import MarkdownView from './MarkdownView.vue'
 import Optional from './Optional.vue'
 import Description from './Description.vue'
 import { useDark } from "@vueuse/core";
@@ -215,7 +220,8 @@ export default defineComponent({
     XCircleIcon, ChevronRightIcon, ChevronDownIcon, PencilIcon, EyeIcon, EyeSlashIcon, LockClosedIcon,
     optional: Optional,
     description: Description,
-    'vue-monaco-editor': VueMonacoEditor
+    'vue-monaco-editor': VueMonacoEditor,
+    'markdown-view': MarkdownView
   },
   emits: ['delete', 'update-value', 'lookup'],
   props: {
@@ -510,21 +516,28 @@ export default defineComponent({
     canPreview(): boolean | undefined {
       return (!!this.value) && (this.canPreviewImage)
     },
+    useMarkdown(): boolean {
+      return this.value !== undefined && this.schema.format === 'markdown'
+    },
     useTextArea(): boolean | undefined {
       return this.value !== undefined
+        && this.schema.format !== 'markdown'
         && (this.schema.enum === undefined || this.isReadOnly)
         && (this.schema.format === 'textarea')
     },
     useCodeEditor(): boolean | undefined {
       return this.value !== undefined
+        && this.schema.format !== 'markdown'
         && (this.schema.enum === undefined || this.isReadOnly)
         && (this.schema.format === 'code' || this.schema.format === 'json')
     },
     useDatePicker(): boolean | undefined {
-      return this.value !== undefined && this.schema.format ==='date-time'
+      return this.value !== undefined
+        && this.schema.format !== 'markdown' && this.schema.format ==='date-time'
     },
     useInput(): boolean | undefined {
       return this.value !== undefined
+        && this.schema.format !== 'markdown'
         && (this.schema.enum === undefined || this.isReadOnly)
         && !this.useTextArea
         && !this.useCodeEditor
