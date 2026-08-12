@@ -13,8 +13,7 @@
   parser and a much smaller thing to get wrong.
 -->
 <template>
-  <div v-if="!value" class="md-empty">Nothing yet.</div>
-  <div v-else class="md" v-html="html"></div>
+  <div v-if="value" class="md" v-html="html"></div>
 </template>
 
 <script setup lang="ts">
@@ -80,12 +79,6 @@ const html = computed(() => {
   line-height: 1.5;
   color: #374151;
   overflow-wrap: anywhere;
-}
-
-.md-empty {
-  padding: 0.5rem 0.625rem;
-  font-size: 0.8125rem;
-  color: #9ca3af;
 }
 
 .md :deep(p) {

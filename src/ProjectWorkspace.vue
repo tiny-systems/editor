@@ -285,7 +285,7 @@
                   v-else
                   :schema="getWidgetSchema(widget)"
                   :key="widget.id + '-' + widgetRenderStamp(widget)"
-                  @update-value="noteWidgetEdit(widget.id); sendSignal($event, widget.node, widget.port)"
+                  @update-value="onWidgetValue(widget, $event)"
                   :has-delete-button="false"
                   :plain-struct="true"
                   class="w-full"
@@ -1075,28 +1075,56 @@ const noteWidgetEdit = (id: string) => {
   recentlyEdited.value = { ...recentlyEdited.value, [id]: Date.now() }
 }
 
-// A widget whose schema declares a button is a FORM: the user fills it and
-// submits. Incoming node data must never rebuild it — that discards what
-// they typed and removes the submit button before their click lands, which
-// is exactly what made submitting appear to do nothing. Everything else is
-// a DISPLAY (debug panels, readouts) and must re-render on new data, which
-// is the whole reason it is on the dashboard.
-const isFormWidget = (widget: any) => {
-  const schema = getWidgetSchema(widget)
-  if (!schema) return false
-  try {
-    return JSON.stringify(schema).includes('"format":"button"')
-  } catch {
-    return false
+// A widget emitted a value. Two cases:
+//   - isAction (a button press / submit): a COMMIT. The click has already
+//     landed, so there is nothing left to protect — release the freeze at once
+//     and let the response stream back and rebuild the widget. Without this the
+//     edit freeze also swallows the answer for its whole window, so a
+//     request→response widget looks stuck for seconds after every submit.
+//   - anything else: a keystroke. Arm the freeze so an incoming update does not
+//     rebuild the form out from under the person mid-typing.
+const onWidgetValue = (widget: any, event: any) => {
+  if (event?.isAction) {
+    editingWidget.value = null
+    if (recentlyEdited.value[widget.id]) {
+      const next = { ...recentlyEdited.value }
+      delete next[widget.id]
+      recentlyEdited.value = next
+    }
+  } else {
+    noteWidgetEdit(widget.id)
   }
+  sendSignal(event, widget.node, widget.port)
 }
 
+// The stamp is a widget's :key. When it changes, the form rebuilds from the
+// node's freshly published data. Two forces are in tension:
+//   - A rebuild mid-interaction discards what was typed and recreates the
+//     submit button out from under an in-flight click — the bug that made
+//     submitting appear to do nothing.
+//   - A form that NEVER rebuilds never shows the answer the flow sent back —
+//     the whole point of a request→response widget (prompt).
+// So freeze ONLY while the person is actively engaged (field focused, or an
+// edit within the last EDIT_FREEZE_MS — which also covers the click itself),
+// and otherwise track _updateTime so a returning answer rebuilds the widget
+// and appears. This is the same rule for forms and display widgets; a form is
+// not special beyond needing the freeze, which the focus/recent-edit guards
+// already provide.
 const widgetRenderStamp = (widget: any) => {
-  if (isFormWidget(widget)) return 'form'
   if (editingWidget.value === widget.id) return 'editing'
   const edited = recentlyEdited.value[widget.id]
   if (edited && nowTick.value - edited < EDIT_FREEZE_MS) return 'editing'
-  return widget._updateTime || 0
+  // Key on the DATA, not a wall-clock _updateTime. A node republishes its
+  // control port on every reconcile tick with identical data; keying on time
+  // rebuilt the widget on each of those, so a form jittered under the cursor
+  // and clicks missed. Keying on the data means a rebuild happens only when
+  // the data actually changes — e.g. an answer returns — and an idle form
+  // stays put.
+  try {
+    return JSON.stringify(widget.Data ?? widget.data ?? {})
+  } catch {
+    return widget._updateTime || 0
+  }
 }
 
 // A widget can only render a form once its node published a port schema.

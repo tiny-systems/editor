@@ -73,7 +73,7 @@
                 :key="p.property"
                 :schema="p.schema"
                 :allow-edit-schema="allowEditSchema"
-                :title="p.schema.title || p.propertyName"
+                :title="p.schema.title !== undefined ? p.schema.title : p.propertyName"
                 :getReference="getReference"
                 :initial-value="value[p.propertyName]"
                 @update-value="onChange(p.propertyName, $event)"
