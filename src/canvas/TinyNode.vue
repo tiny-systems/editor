@@ -71,18 +71,27 @@ const calculateHandlerStyle = (h: HandleProps, nodeData: NodeData): CSSPropertie
   } else if (h.rotated_position == 2) { // bottom
     style.bottom = '-6px'
     style.left = offsetPct
-    style.writingMode = 'vertical-rl'
-    style.paddingTop = '18px'
     style.lineHeight = '12px'
   } else { // top
     style.top = '-6px'
     style.left = offsetPct
-    style.writingMode = 'vertical-lr'
-    style.direction = 'rtl'
-    style.paddingBottom = '18px'
     style.lineHeight = '12px'
   }
   return style
+}
+
+// Top/bottom port labels used to render vertically (writing-mode), which read
+// as broken for a lone port like Error. Position the label horizontally,
+// centered on the port and pushed clear of the node, without moving the port
+// dot itself — edges connect to the dot, so this is purely the label.
+const calculateLabelStyle = (h: HandleProps) => {
+  if (h.rotated_position == 2) { // bottom
+    return { position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', marginTop: '3px' }
+  }
+  if (h.rotated_position == 0) { // top
+    return { position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', marginBottom: '3px' }
+  }
+  return {}
 }
 
 const posIntToStr = (n: Number) => {
@@ -246,7 +255,7 @@ export default {
       :style="calculateHandlerStyle(h, props.data)"
       :class="['border', calculateHandlerClass(h, props.data)]"
     >
-      <span class="px-1 text-[10px] tracking-tight">{{ h.label }}</span>
+      <span class="px-1 text-[10px] tracking-tight" :style="calculateLabelStyle(h)">{{ h.label }}</span>
     </Handle>
   </template>
 </template>
