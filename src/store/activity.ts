@@ -82,6 +82,9 @@ export const useActivityStore = defineStore('activity', {
           this.connection = 'live'
           for await (const evt of stream as AsyncIterable<any>) {
             if (controller.signal.aborted) break
+            // Server keepalives (sent so it can detect this stream's
+            // disconnect) carry no real activity — drop them.
+            if ((evt as any)?.kind === 'keepalive') continue
             this._pushEvent(evt)
           }
           if (!controller.signal.aborted) {
