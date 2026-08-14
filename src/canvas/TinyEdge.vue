@@ -64,7 +64,21 @@ const { addSelectedEdges, findEdge } = useVueFlow()
 // Orthogonal step routing with a soft 12px corner radius gives the
 // clean right-angle look the design references use without losing the
 // "smooth bend" feel at corners.
-const path = computed(() => getSmoothStepPath({ ...props, borderRadius: 12 }))
+//
+// Self-loop (a node wired to its own input — a prompt replying to itself, an
+// http_server request→response loop): both ports sit on the same node at the
+// same height, so the step router draws a straight horizontal line that runs
+// behind the node body and vanishes. Arc it up and clear of the node instead.
+const path = computed(() => {
+  const edge = findEdge(props.id)
+  if (edge && edge.source === edge.target) {
+    const sx = props.sourceX, sy = props.sourceY, tx = props.targetX, ty = props.targetY
+    const lift = 90
+    const d = `M ${sx},${sy} C ${sx + 70},${sy - lift} ${tx - 70},${ty - lift} ${tx},${ty}`
+    return [d, (sx + tx) / 2, Math.min(sy, ty) - lift * 0.7, 0, 0]
+  }
+  return getSmoothStepPath({ ...props, borderRadius: 12 })
+})
 
 // Highlight the selected trace's execution path: an edge that carried data in
 // the trace has data.trace — draw it in indigo with a soft glow (on top of the
