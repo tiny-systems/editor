@@ -268,47 +268,12 @@
             <div class="grid-stack">
               <Widget v-for="widget in widgets" :key="widget.id" :data="widget" :pages="dashboardPages"
                       :is-editing="isLayoutEditing"
-                      @focusin="editingWidget = widget.id"
-                      @focusout="releaseWidgetFocus(widget.id)"
                       @edit-schema="editWidget" @reset-schema="e => showResetSchema = e">
-                <!-- A widget's form is built from its node's published port
-                     schema, which only exists once the node has reconciled.
-                     Freshly installed widgets therefore render as blank
-                     panels for a while, which reads as broken rather than
-                     as pending. -->
-                <div v-if="!widgetHasSchema(widget)"
-                     class="flex items-center gap-2 p-4 text-sm text-gray-500 dark:text-gray-400">
-                  <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-transparent dark:border-gray-600 dark:border-t-transparent"></span>
-                  Waiting for the node to start — its form appears once the module is running.
-                </div>
-                <!-- Chat widgets keep their own state (composer, scroll), so
-                     they are keyed on identity only — data flows in as a
-                     reactive prop instead of a key-forced rebuild. -->
-                <ChatWidget
-                  v-else-if="getWidgetSchema(widget).format === 'chat'"
-                  :key="widget.id + '-chat'"
-                  :data="widget.data"
-                  :readonly="false"
-                  :locale="locale"
-                  class="w-full h-full"
-                  @send="v => sendSignal({ isAction: true, value: v }, widget.node, widget.port)"
-                />
-                <JsonEditor
-                  v-else
-                  :schema="getWidgetSchema(widget)"
-                  :key="widget.id + '-' + widgetRenderStamp(widget)"
-                  @update-value="onWidgetValue(widget, $event)"
-                  :has-delete-button="false"
-                  :plain-struct="true"
-                  class="w-full"
-                  no-border
-                  :allow-edit-schema="false"
-                  :allow-lookup="false"
-                  :initial-value="widget.data"
-                  :disable-collapse="true"
-                  :locale="locale"
-                  :readonly="false"
-                />
+                <!-- The shared renderer (pending note / chat / schema form) —
+                     the same component the Agent page mounts. It owns the
+                     render freeze; this surface owns the transport. -->
+                <WidgetBody :widget="widget" :locale="locale"
+                            @signal="e => onWidgetSignal(widget, e)" />
               </Widget>
               <div v-if="!loading && !error && widgets.length === 0"
                    class="p-7 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -775,7 +740,9 @@ import CreateFlow from './project/CreateFlow.vue'
 import RenameFlow from './project/RenameFlow.vue'
 import CreateNewDashboardPage from './project/CreateNewDashboardPage.vue'
 import Widget from './dashboard/Widget.vue'
-import ChatWidget from './dashboard/ChatWidget.vue'
+import WidgetBody from './dashboard/WidgetBody.vue'
+import { useProjectStream } from './dashboard/useProjectStream'
+import { getWidgetSchema } from './dashboard/widget-schema'
 import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'
 import SmallLoadingCircle from './support/SmallLoadingCircle.vue'
@@ -873,20 +840,47 @@ watch(tab, (next) => {
   if (applyingFromURL) return // came from the URL; history already reflects it
   syncTabToURL(next)
 })
-const loading = ref(false)
-const loadingStatus = ref('')
-const connected = ref(false)
-const error = ref<string | null>(null)
+// The project stream — the same composable the Agent page mounts. This
+// surface adds GridStack wiring and edit-mode preservation through the hooks.
+// (grid / isLayoutEditing / pendingSchemaChanges are declared below; the
+// hooks only run once the stream delivers events, well after setup.)
+const stream = useProjectStream(props.client, () => props.projectName, {
+  onWidgetAdded: (w) => {
+    if (grid) makeWidget(w)
+  },
+  beforeWidgetReplace: (existing, incoming) => {
+    // Preserve local schema changes during edit mode or when a widget has
+    // pending schema changes (reset/edit) that haven't been saved yet.
+    // Without this, stream events overwrite the local schema with stale
+    // server data.
+    if (isLayoutEditing.value || pendingSchemaChanges.value.has(incoming.ID)) {
+      incoming.schema = existing.schema
+      incoming.Schema = existing.Schema
+    }
+    // Preserve grid positions during edit mode so user's drag/resize isn't
+    // overwritten by stream updates
+    if (isLayoutEditing.value) {
+      incoming.grid = existing.grid
+    }
+  },
+  onWidgetRemoved: (id) => {
+    if (grid) {
+      try { grid.removeWidget(`#${id}`, false) } catch (e) {}
+    }
+  },
+  onProjectMissing: () => {
+    // TinyProject CR is gone from the cluster but the DB still has it.
+    // Open the recovery modal — the user can rebuild from DB.
+    projectMissingInCluster.value = true
+    showRecoverModal.value = true
+  }
+})
 
-const project = ref<any>(null)
-const server = ref<any>(null)
-const accessMap = ref<any>(null)
-const projectStat = ref<any>(null)
-
-const flows = ref<any[]>([])
-const widgets = ref<any[]>([])
-const dashboardPages = ref<any[]>([])
-const dashboardPage = ref<string | null>(null)
+const {
+  loading, loadingStatus, connected, error,
+  project, server, accessMap, projectStat,
+  flows, widgets, dashboardPages, dashboardPage
+} = stream
 
 const traceRate = ref<string | null>(null)
 const errorRate = ref<string | null>(null)
@@ -1027,8 +1021,7 @@ const openCreateFlow = () => {
   openNewFlowModal.value = true
 }
 
-// Stream abort controllers
-let streamAbort: AbortController | null = null
+// Stat-stream abort controller (the project stream lives in useProjectStream)
 let statStreamAbort: AbortController | null = null
 
 // GridStack instance
@@ -1050,177 +1043,11 @@ const checkAccess = (accessMap: any, key: string, defaultValue: boolean = false)
   return access[key] === true
 }
 
-// Get widget schema (uses schema if set, otherwise defaultSchema)
-// Handles $ref definitions like the original getSchema function
-// Which widget the user is currently interacting with, and the render stamp
-// that keeps it mounted while they are.
-//
-// The form is keyed on the widget's last-update time so incoming data
-// re-renders it. That also remounts it mid-interaction: a node's status
-// changes constantly while a flow runs, and a click that lands between
-// mousedown and mouseup on a button that got unmounted is simply lost —
-// which is why submitting a widget reliably needed two clicks. While focus
-// is inside a widget its key is frozen; the pending data is picked up as
-// soon as focus leaves.
-const editingWidget = ref<string | null>(null)
-let releaseFocusTimer: ReturnType<typeof setTimeout> | null = null
-
-const releaseWidgetFocus = (id: string) => {
-  // focusout fires before focusin when moving between fields of the same
-  // form, so settle on the next tick rather than dropping the freeze
-  // between every keystroke and the Send button.
-  if (releaseFocusTimer) clearTimeout(releaseFocusTimer)
-  releaseFocusTimer = setTimeout(() => {
-    if (editingWidget.value === id) editingWidget.value = null
-  }, 150)
-}
-
-// Any local edit also freezes the form briefly. Focus events are the
-// obvious signal, but they do not fire for every way a value can change,
-// and the failure they guard against is severe: an incoming update
-// rebuilds the form mid-interaction, discarding what was typed and
-// removing the submit button before the click lands.
-const recentlyEdited = ref<Record<string, number>>({})
-const EDIT_FREEZE_MS = 4000
-
-const noteWidgetEdit = (id: string) => {
-  if (!id) return
-  recentlyEdited.value = { ...recentlyEdited.value, [id]: Date.now() }
-}
-
-// A widget emitted a value. Two cases:
-//   - isAction (a button press / submit): a COMMIT. The click has already
-//     landed, so there is nothing left to protect — release the freeze at once
-//     and let the response stream back and rebuild the widget. Without this the
-//     edit freeze also swallows the answer for its whole window, so a
-//     request→response widget looks stuck for seconds after every submit.
-//   - anything else: a keystroke. Arm the freeze so an incoming update does not
-//     rebuild the form out from under the person mid-typing.
-const onWidgetValue = (widget: any, event: any) => {
-  if (event?.isAction) {
-    editingWidget.value = null
-    if (recentlyEdited.value[widget.id]) {
-      const next = { ...recentlyEdited.value }
-      delete next[widget.id]
-      recentlyEdited.value = next
-    }
-  } else {
-    noteWidgetEdit(widget.id)
-  }
-  sendSignal(event, widget.node, widget.port)
-}
-
-// The stamp is a widget's :key. When it changes, the form rebuilds from the
-// node's freshly published data. Two forces are in tension:
-//   - A rebuild mid-interaction discards what was typed and recreates the
-//     submit button out from under an in-flight click — the bug that made
-//     submitting appear to do nothing.
-//   - A form that NEVER rebuilds never shows the answer the flow sent back —
-//     the whole point of a request→response widget (prompt).
-// So freeze ONLY while the person is actively engaged (field focused, or an
-// edit within the last EDIT_FREEZE_MS — which also covers the click itself),
-// and otherwise track _updateTime so a returning answer rebuilds the widget
-// and appears. This is the same rule for forms and display widgets; a form is
-// not special beyond needing the freeze, which the focus/recent-edit guards
-// already provide.
-const widgetRenderStamp = (widget: any) => {
-  if (editingWidget.value === widget.id) return 'editing'
-  const edited = recentlyEdited.value[widget.id]
-  if (edited && nowTick.value - edited < EDIT_FREEZE_MS) return 'editing'
-  // Key on the DATA, not a wall-clock _updateTime. A node republishes its
-  // control port on every reconcile tick with identical data; keying on time
-  // rebuilt the widget on each of those, so a form jittered under the cursor
-  // and clicks missed. Keying on the data means a rebuild happens only when
-  // the data actually changes — e.g. an answer returns — and an idle form
-  // stays put.
-  try {
-    return JSON.stringify(widget.Data ?? widget.data ?? {})
-  } catch {
-    return widget._updateTime || 0
-  }
-}
-
-// A widget can only render a form once its node published a port schema.
-const widgetHasSchema = (widget: any) => {
-  const schema = getWidgetSchema(widget)
-  return !!schema && Object.keys(schema).length > 0
-}
-
-const getWidgetSchema = (widget: any, configure: boolean = false) => {
-  if (!widget) return {}
-  let schema = widget.schema || widget.Schema
-  if (!schema || Object.keys(schema).length === 0) {
-    schema = widget.defaultSchema || widget.DefaultSchema || widget.defaultschema
-  }
-  if (!schema) return {}
-
-  // Handle $ref definitions (same as original getSchema function)
-  if (schema['$ref'] === undefined) {
-    return schema
-  }
-
-  const ref = (schema['$ref'] as string).replace('#/$defs/', '')
-  if (ref === '') {
-    return schema
-  }
-  if (!schema['$defs'] || schema['$defs'][ref] === undefined) {
-    return schema
-  }
-
-  schema['$defs'][ref]['configure'] = configure
-  return schema
-}
-
-// Get Tailwind grid column class based on widget grid width (6-column grid like original)
-const getWidgetGridClass = (widget: any) => {
-  const w = widget.grid?.w || 0
-  // Map grid width (1-6) to Tailwind col-span classes
-  // If w is 0 or not set, default to full width (6)
-  const colSpanMap: Record<number, string> = {
-    1: 'col-span-1',
-    2: 'col-span-2',
-    3: 'col-span-3',
-    4: 'col-span-4',
-    5: 'col-span-5',
-    6: 'col-span-6'
-  }
-  return colSpanMap[w] || 'col-span-6'
-}
-
-// Send signal to node - only handles action button clicks (same as original)
-const sendSignal = async (event: any, nodeId: string, portName: string = '_control') => {
-  // Only handle action button clicks, not regular value changes
-  if (!event?.isAction) return
-  if (!nodeId) return
-
-  if (!props.projectName || !project.value) return
-
-  loading.value = true
-  try {
-    await client.flow.runAction({
-      NodeID: nodeId,
-      ProjectName: project.value.ResourceName || project.value.resourcename,
-      PortName: portName,
-      Data: new TextEncoder().encode(JSON.stringify(event.value))
-    })
-    // Signals are fire-and-forget: the flow runs on the cluster and this
-    // call returns as soon as it is published. Without an acknowledgement
-    // a submitted form looks identical to a dead button, which is exactly
-    // how it read the first time anyone used this dashboard.
-    notify({
-      group: 'success',
-      title: 'Sent',
-      text: 'The flow is running. Watch Errors above, or open the flow for its trace.'
-    }, 4000)
-  } catch (e: any) {
-    notify({
-      group: 'error',
-      title: 'Error',
-      text: e.message || 'Failed to run action'
-    }, 99999)
-  } finally {
-    loading.value = false
-  }
+// A widget submitted through the shared renderer. WidgetBody owns the
+// render freeze; this surface owns the transport. Chat submissions ride
+// silent — the thread shows its own pending state instead of a toast.
+const onWidgetSignal = (widget: any, event: any) => {
+  stream.sendSignal(event, widget.node, widget.port, { silent: !!event.chat })
 }
 
 // Helper to get project ID (handles both PascalCase and lowercase)
@@ -1250,229 +1077,6 @@ const loadProjectsList = async () => {
 const setProjectPage = (page: number) => {
   projectActivePage.value = page
   loadProjectsList()
-}
-
-// Parse flow graph from bytes
-const parseFlowGraph = (flowItem: any) => {
-  const flow = flowItem.Flow || flowItem.flow
-  if (!flow) return null
-
-  let graph = {}
-  const graphBytes = flow.Graph || flow.graph
-  if (graphBytes && graphBytes.length > 0) {
-    try {
-      const graphStr = new TextDecoder().decode(graphBytes)
-      graph = JSON.parse(graphStr)
-    } catch (e) {
-      console.error('Failed to parse flow graph:', e)
-    }
-  }
-
-  // Normalize property names (handle both PascalCase and lowercase)
-  return {
-    ID: flow.ID || flow.id,
-    Name: flow.Name || flow.name,
-    ResourceName: flow.ResourceName || flow.resourcename,
-    Revision: flow.Revision || flow.revision,
-    RevisionComment: flow.RevisionComment || flow.revisioncomment || '',
-    Num: flow.Num || flow.num,
-    graph
-  }
-}
-
-// Start project stream
-const listenStream = async () => {
-  const projectName = props.projectName
-  if (!projectName) return
-
-  // Cancel any existing stream
-  if (streamAbort) {
-    streamAbort.abort()
-  }
-  streamAbort = new AbortController()
-
-  const req: any = {
-    ProjectName: projectName,
-    PageName: dashboardPage.value || ''
-  }
-
-  try {
-    for await (const response of client.project.getStream(req, { signal: streamAbort.signal })) {
-      connected.value = true
-
-      // Handle different event types
-      if (response.Type === 'LOADING') {
-        loadingStatus.value = response.Message
-        continue
-      }
-
-      if (response.Type === 'PROJECT_MISSING_IN_CLUSTER') {
-        // TinyProject CR is gone from the cluster but the DB still has it.
-        // Open the recovery modal — the user can rebuild from DB.
-        loading.value = false
-        projectMissingInCluster.value = true
-        showRecoverModal.value = true
-        continue
-      }
-
-      if (response.Type === 'INIT_PROJECT_CONFIGURATION') {
-        const config = response.Configuration
-        if (config) {
-          project.value = config.Project
-          accessMap.value = config.Access
-          server.value = config.Server
-        }
-        continue
-      }
-
-      if (response.Type === 'INIT_PROJECT') {
-        loading.value = false
-        const clusterInfo = response.ClusterInfo
-        if (clusterInfo) {
-          projectStat.value = clusterInfo.Stat
-
-          // Set dashboard pages
-          if (!dashboardPage.value) {
-            if (clusterInfo.Pages && clusterInfo.Pages.length > 0) {
-              dashboardPage.value = clusterInfo.Pages[0]!.Name
-            } else {
-              // No pages exist yet - set default page name so save can create it
-              dashboardPage.value = 'Home'
-            }
-          }
-          dashboardPages.value = clusterInfo.Pages || []
-
-          // Parse flows
-          const parsedFlows: any[] = []
-          for (const flowItem of (clusterInfo.Flows || [])) {
-            const parsed = parseFlowGraph(flowItem)
-            if (parsed) {
-              parsedFlows.push(parsed)
-            }
-          }
-          flows.value = parsedFlows
-        }
-        continue
-      }
-
-      // Handle dashboard events (widget updates)
-      for (const event of (response.DashboardEvent || [])) {
-        if (event.Type === 'UPDATE_WIDGET') {
-          const widget = event.Widget as any
-          if (widget) {
-            // Check if widget belongs to current page
-            const widgetPages = widget.Pages || widget.pages || []
-            if (dashboardPage.value && widgetPages.length > 0 && !widgetPages.includes(dashboardPage.value)) {
-              continue
-            }
-
-            // Parse schema and data from bytes
-            let defaultSchema = {}
-            let schema = {}
-            let data = {}
-
-            const defaultSchemaBytes = widget.DefaultSchema || widget.defaultschema
-            if (defaultSchemaBytes && defaultSchemaBytes.length > 0) {
-              try {
-                defaultSchema = JSON.parse(new TextDecoder().decode(defaultSchemaBytes))
-              } catch (e) {}
-            }
-
-            const schemaBytes = widget.Schema || widget.schema
-            if (schemaBytes && schemaBytes.length > 0) {
-              try {
-                schema = JSON.parse(new TextDecoder().decode(schemaBytes))
-              } catch (e) {}
-            }
-
-            const dataBytes = widget.Data || widget.data
-            if (dataBytes && dataBytes.length > 0) {
-              try {
-                data = JSON.parse(new TextDecoder().decode(dataBytes))
-              } catch (e) {}
-            }
-
-            // Get grid info - handle both PascalCase and lowercase (same as original buildWidget)
-            const gridInfo = widget.Grid || widget.grid || {}
-
-            // Build widget data matching original buildWidget function
-            const widgetData: any = {
-              ID: widget.ID || widget.id,
-              id: widget.ID || widget.id,
-              title: widget.Title || '',
-              Node: widget.Node || '',
-              node: widget.Node || '',
-              Port: widget.Port || '_control',
-              port: widget.Port || '_control',
-              pagesList: widgetPages,
-              grid: {
-                x: gridInfo.X ?? gridInfo.x ?? 0,
-                y: gridInfo.Y ?? gridInfo.y ?? 0,
-                w: (gridInfo.W || gridInfo.w) || 6,  // Default width 6 columns (full width)
-                h: (gridInfo.H || gridInfo.h) || 3   // Default height 3 rows
-              },
-              defaultSchema,
-              DefaultSchema: defaultSchema,
-              schema,
-              Schema: schema,
-              data,
-              Data: data,
-              _updateTime: Date.now()  // Track update time for reactivity
-            }
-
-            // Update or add widget
-            const index = widgets.value.findIndex(w => w.ID === widgetData.ID)
-            if (index === -1) {
-              widgets.value.push(widgetData)
-              // Add widget to GridStack after DOM update
-              await nextTick()
-              if (grid) {
-                makeWidget(widgetData)
-              }
-            } else {
-              // Preserve local schema changes during edit mode or when
-              // a widget has pending schema changes (reset/edit) that
-              // haven't been saved yet. Without this, stream events
-              // overwrite the local schema with stale server data.
-              const existing = widgets.value[index]
-              if (isLayoutEditing.value || pendingSchemaChanges.value.has(widgetData.ID)) {
-                widgetData.schema = existing.schema
-                widgetData.Schema = existing.Schema
-              }
-              // Preserve grid positions during edit mode so user's
-              // drag/resize isn't overwritten by stream updates
-              if (isLayoutEditing.value) {
-                widgetData.grid = existing.grid
-              }
-              widgets.value[index] = widgetData
-            }
-          }
-        } else if (event.Type === 'DELETE_WIDGET') {
-          // A dashboard node was deleted (or lost its label): drop its widget
-          // live, so it can't linger the way it did with the old widget store.
-          const wid = (event.Widget as any)?.ID || (event.Widget as any)?.id
-          const idx = widgets.value.findIndex(w => w.ID === wid)
-          if (idx !== -1) {
-            if (grid) {
-              try { grid.removeWidget(`#${wid}`, false) } catch (e) {}
-            }
-            widgets.value.splice(idx, 1)
-          }
-        }
-      }
-    }
-  } catch (e: any) {
-    // Ignore abort/cancel errors (from refresh or unmount)
-    const isCanceled = e.name === 'AbortError' ||
-                       (e.message && e.message.includes('[canceled]')) ||
-                       (e.message && e.message.includes('signal is aborted'))
-    if (!isCanceled) {
-      error.value = e.message || 'Stream error'
-      connected.value = false
-      loading.value = false
-      console.error('Project stream error:', e)
-    }
-  }
 }
 
 // Start statistics stream
@@ -1513,13 +1117,8 @@ const listenStatStream = async () => {
 }
 
 const loadProject = () => {
-  widgets.value = []
-  flows.value = []
-  loading.value = true
-  error.value = null
-  connected.value = false
   isLayoutEditing.value = false
-  listenStream()
+  stream.start()
   listenStatStream()
 }
 
@@ -1786,8 +1385,8 @@ watch(() => props.projectName, (newVal, oldVal) => {
 })
 
 onMounted(() => {
-  // Drives both the "last failure" label and the post-edit render freeze,
-  // so it ticks at the freeze's resolution rather than the label's.
+  // Drives the "last failure" label. (The per-widget render freeze moved
+  // into WidgetBody with its own ticker.)
   nowTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
   refreshFailedRuns()
   failureTimer = setInterval(refreshFailedRuns, 30000)
@@ -1816,11 +1415,8 @@ onMounted(() => {
 onUnmounted(() => {
   if (nowTimer) { clearInterval(nowTimer); nowTimer = null }
   if (failureTimer) { clearInterval(failureTimer); failureTimer = null }
-  if (releaseFocusTimer) { clearTimeout(releaseFocusTimer); releaseFocusTimer = null }
   if (isBrowser()) window.removeEventListener('popstate', onPopState)
-  if (streamAbort) {
-    streamAbort.abort()
-  }
+  stream.stop()
   if (statStreamAbort) {
     statStreamAbort.abort()
   }
