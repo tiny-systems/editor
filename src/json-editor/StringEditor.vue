@@ -573,7 +573,13 @@ export default defineComponent({
       return this.readonly || this.schema.readonly
     },
     isSecret(): boolean {
-      return this.schema.secret === true
+      // Standard JSON Schema writeOnly and format password mark secrets;
+      // `secret` is the legacy local keyword, kept for existing schemas.
+      return (
+        this.schema.secret === true ||
+        this.schema.writeOnly === true ||
+        this.schema.format === 'password'
+      )
     },
     hasDeleteButtonFunction(): boolean {
       return this.hasDeleteButton && !this.isReadOnly

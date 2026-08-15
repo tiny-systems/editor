@@ -1,8 +1,11 @@
 <template>
   <div :id="data.id" :gs-id="data.id" :gs-x="data.grid.x" :gs-y="data.grid.y" :gs-w="data.grid.w" :gs-h="data.grid.h">
-    <div class="grid-stack-item-content group relative highlight-white/5 rounded-md"
+    <!-- Flex column so the slot area gets the cell's remaining height: chat
+         widgets pin their composer and scroll the thread internally instead
+         of the whole cell scrolling (input drifting away with the content). -->
+    <div class="grid-stack-item-content group relative highlight-white/5 rounded-md flex flex-col"
          :class="{ 'cursor-move border dark:border-gray-700': isEditing }">
-      <div class="text-sm text-center p-1 dark:text-gray-400">
+      <div class="shrink-0 text-sm text-center p-1 dark:text-gray-400">
         <div v-if="isEditing" class="flex justify-between gap-x-2 relative">
           <input type="text" v-model="data.title"
                  class="border-indigo-500 text-sm p-1 w-full placeholder-gray-400 appearance-none border rounded outline-0 text-center text-gray-700 dark:bg-gray-900 dark:text-gray-300">
@@ -31,7 +34,10 @@
         </div>
         <div v-else>{{ data.title }}</div>
       </div>
-      <div class="flex items-center justify-center">
+      <!-- items-start (not center): the wrapper used to be content-sized so
+           vertical centering was a no-op; now that it fills the cell, forms
+           must stay top-aligned and scroll here when taller than the cell. -->
+      <div class="flex-1 min-h-0 flex items-start justify-center overflow-y-auto">
         <button v-if="isEditing"
                 class="opacity-0 group-hover:opacity-100 focus:opacity-100 absolute top-10 right-2 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-opacity"
                 @click="editWidgetSchema"
