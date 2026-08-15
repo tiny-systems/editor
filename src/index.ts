@@ -88,6 +88,18 @@ export { default as FlowWorkspace } from './FlowWorkspace.vue'
 export { default as ProjectWorkspace } from './ProjectWorkspace.vue'
 export { useActivityStore } from './store/activity'
 
+// The Agent page — the place for USING an agent (setup + chat + widgets), as
+// the flow editor is the place for building it. Hosts mount it at
+// /app/<project>:
+//   <AgentPage :client="client" :project-name="p" />
+// The widget surface it renders is shared with ProjectWorkspace's Widgets
+// tab: WidgetBody (one widget's renderer — pending note / chat / schema
+// form) driven by useProjectStream (the live project stream + submit path).
+export { default as AgentPage } from './AgentPage.vue'
+export { default as WidgetBody } from './dashboard/WidgetBody.vue'
+export { useProjectStream } from './dashboard/useProjectStream'
+export * from './dashboard/widget-schema'
+
 // setNavigator lets the host route the editor's platform-style navigation
 // (back-to-project, flow switch) through its own router instead of a full-page
 // reload. See support/nav.ts.
