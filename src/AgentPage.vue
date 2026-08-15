@@ -34,12 +34,16 @@
                class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
         <h2 v-if="widget.title"
             class="px-4 pt-3 pb-1 text-sm font-medium text-gray-700 dark:text-gray-300">{{ widget.title }}</h2>
-        <WidgetBody
-          :widget="widget"
-          :locale="locale"
-          :class="isChatWidget(widget) ? 'h-[32rem]' : ''"
-          @signal="(e) => onSignal(widget, e)"
-        />
+        <!-- Chat gets real estate; the wrapper carries the height because
+             WidgetBody's root is h-full (it must fill grid cells on the
+             dashboard) and a class merge would race it. -->
+        <div :class="isChatWidget(widget) ? 'h-[32rem]' : ''">
+          <WidgetBody
+            :widget="widget"
+            :locale="locale"
+            @signal="(e) => onSignal(widget, e)"
+          />
+        </div>
       </section>
 
       <div v-if="!loading && !error && widgets.length === 0"
