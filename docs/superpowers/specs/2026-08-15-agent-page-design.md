@@ -50,8 +50,9 @@ exposedSettings:
 
 - The Agent page aggregates these into one Setup card. Secrets render masked; values are written through the existing node-settings save path (same storage, same publish-redaction rules — see `publish-secret-leak`).
 - "Configured" for a secret field = non-empty stored value (page never reads the secret back; it shows "set" state only).
-- All `required` entries filled → status chip **Live**; otherwise **Needs setup**. UI truth only — no runtime gating of the flow (flow runs and routes errors exactly as today).
+- All `required` entries filled → status chip **Live**; otherwise **Needs setup**. No *new* gating machinery: saving a setting updates the node spec, the operator reconciles, and the component (re)starts with the new config — which is the real gate for components that cannot start unconfigured (owner's example: `http_server` needs its settings before it can listen). The setup page is the front door to that existing reconcile path.
 - MCP: project/flow info includes `setupUrl` + unfilled required settings, so tiny (and Claude Code) can print the finish-setup line after build.
+- Changing settings later: the card does not disappear once complete — it stays on the page as a "Settings" section (collapsed when all required values are set). Open, edit, Save → same node-spec path, component reconfigures live. Secrets display as "set ●●●●" with a Replace action; stored values are never read back into the browser.
 
 ### 4. Chat widget renderer
 
