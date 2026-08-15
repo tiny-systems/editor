@@ -281,6 +281,18 @@
                   <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-transparent dark:border-gray-600 dark:border-t-transparent"></span>
                   Waiting for the node to start — its form appears once the module is running.
                 </div>
+                <!-- Chat widgets keep their own state (composer, scroll), so
+                     they are keyed on identity only — data flows in as a
+                     reactive prop instead of a key-forced rebuild. -->
+                <ChatWidget
+                  v-else-if="getWidgetSchema(widget).format === 'chat'"
+                  :key="widget.id + '-chat'"
+                  :data="widget.data"
+                  :readonly="false"
+                  :locale="locale"
+                  class="w-full h-full"
+                  @send="v => sendSignal({ isAction: true, value: v }, widget.node, widget.port)"
+                />
                 <JsonEditor
                   v-else
                   :schema="getWidgetSchema(widget)"
@@ -763,6 +775,7 @@ import CreateFlow from './project/CreateFlow.vue'
 import RenameFlow from './project/RenameFlow.vue'
 import CreateNewDashboardPage from './project/CreateNewDashboardPage.vue'
 import Widget from './dashboard/Widget.vue'
+import ChatWidget from './dashboard/ChatWidget.vue'
 import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'
 import SmallLoadingCircle from './support/SmallLoadingCircle.vue'
