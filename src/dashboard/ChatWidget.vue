@@ -20,13 +20,17 @@
       </div>
 
       <template v-for="entry in thread" :key="entry.id">
-        <!-- Human message -->
+        <!-- Human message. "Working…" dots animate only under the NEWEST
+             pending message — a message the flow never answered (e.g. it
+             errored into an unwired port) would otherwise shimmer forever.
+             Older unanswered messages get a quiet static mark instead. -->
         <div v-if="entry.kind === 'message'" class="flex justify-end">
           <div class="max-w-[85%]">
             <div class="rounded-2xl rounded-br-sm bg-indigo-500 dark:bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap break-words">{{ entry.text }}</div>
-            <div v-if="entry.pending" class="flex items-center justify-end gap-1.5 pt-1 pr-1">
+            <div v-if="entry.pending && entry.id === lastPendingId" class="flex items-center justify-end gap-1.5 pt-1 pr-1">
               <span class="typing-dot"></span><span class="typing-dot" style="animation-delay:.18s"></span><span class="typing-dot" style="animation-delay:.36s"></span>
             </div>
+            <div v-else-if="entry.pending" class="pt-0.5 pr-1 text-right text-[10px] text-gray-400 dark:text-gray-600 select-none" title="The flow never replied to this message">no reply</div>
           </div>
         </div>
 
@@ -145,6 +149,15 @@ export default defineComponent({
     },
     pendingQuestion(): any | null {
       return this.data?.pendingQuestion || null
+    },
+    // The newest unanswered human message — the only one that earns the
+    // animated "working…" dots.
+    lastPendingId(): string | null {
+      for (let i = this.thread.length - 1; i >= 0; i--) {
+        const e = this.thread[i]
+        if (e.kind === 'message' && e.pending) return e.id
+      }
+      return null
     },
     placeholder(): string {
       return this.data?.placeholder || 'Message the agent…'
