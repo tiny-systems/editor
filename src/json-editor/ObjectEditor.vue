@@ -66,7 +66,7 @@
              v-if="properties.length === 0 && !expression && schema.configurable && !isReadOnly">Empty — add your own properties by clicking<PencilIcon class="w-3 mx-2 h-3"></PencilIcon>
           </p>
             <div v-for="(p, i) in properties" v-show="!expression"
-                 :class="[(tabs.length > 0 ? ( getMerged(p.schema).tab == current ? 'block' : 'hidden') : 'block'),  'break-inside-avoid-column' + (getMerged(p.schema.align) ? ' text-' + getMerged(p.schema).align : '') + (getMerged(p.schema).colSpan ? ' ' + getMerged(p.schema).colSpan : ' col-span-12')]">
+                 :class="[(tabs.length > 0 && getMerged(p.schema).tab ? ( getMerged(p.schema).tab == current ? 'block' : 'hidden') : 'block'),  'break-inside-avoid-column' + (getMerged(p.schema.align) ? ' text-' + getMerged(p.schema).align : '') + (getMerged(p.schema).colSpan ? ' ' + getMerged(p.schema).colSpan : ' col-span-12')]">
               <editor
                 v-if="isRequired(p.property) !== false"
                 :property="p.property"
