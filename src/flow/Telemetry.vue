@@ -168,6 +168,14 @@ export default defineComponent({
     const scroller = ref<HTMLElement | null>(null)
     const chartRef = shallowRef<InstanceType<typeof VChart> | null>(null)
     let stream: any = null
+    // Aborts the telemetry stats stream for real. Setting `stream = null`
+    // closes nothing: the async iterator keeps its HTTP connection until the
+    // server ends it, and the `!isMounted` check only runs when a message
+    // arrives — on a quiet stream, never. Each flow-view visit then leaks one
+    // held connection until Chrome's 6-per-origin pool is exhausted and every
+    // further call (including AcquireFlowLock) queues forever — the editor
+    // reads as "not responding" while the server is perfectly healthy.
+    let streamAbort: AbortController | null = null
     let isMounted = true
 
     const localCollapsed = ref(false)
@@ -447,17 +455,19 @@ export default defineComponent({
 
       const subscribeTime = new Date()
 
-      // Cancel existing stream
-      if (stream) {
-        stream = null
+      // Cancel existing stream — abort the transport, not just the reference.
+      if (streamAbort) {
+        streamAbort.abort()
       }
+      streamAbort = new AbortController()
+      stream = null
 
       // Start streaming
       try {
         const streamIterator = client.statistics.getStream({
           FlowName: props.flowName,
           ProjectName: props.projectName
-        })
+        }, { signal: streamAbort.signal })
 
         stream = streamIterator
 
@@ -494,8 +504,11 @@ export default defineComponent({
               }
             }
           } catch (e: any) {
+            // An abort is deliberate (reconnect or unmount) — not an error.
+            const isCanceled = e.name === 'AbortError' ||
+              (e.message && (e.message.includes('[canceled]') || e.message.includes('signal is aborted')))
             // Only log and update state if still mounted
-            if (isMounted) {
+            if (isMounted && !isCanceled) {
               console.error('[Telemetry] Stream error:', e)
               connected.value = false
               error.value = e.message || 'Stream error'
@@ -539,6 +552,10 @@ export default defineComponent({
 
     onUnmounted(() => {
       isMounted = false
+      if (streamAbort) {
+        streamAbort.abort()
+        streamAbort = null
+      }
       stream = null
     })
 
