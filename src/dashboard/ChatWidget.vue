@@ -48,7 +48,7 @@
 
   <div v-else class="flex flex-col h-full min-h-[16rem]">
     <!-- Thread -->
-    <div ref="scroller" class="flex-1 overflow-y-auto px-3 pt-3 pb-1 space-y-2">
+    <div ref="scroller" class="flex-1 overflow-y-auto px-3 pt-3 pb-1 space-y-2" @scroll="onScroll">
       <div v-if="thread.length === 0" class="h-full flex items-center justify-center">
         <p class="text-xs text-gray-400 dark:text-gray-600 select-none">{{ emptyLine }}</p>
       </div>
@@ -184,7 +184,10 @@ export default defineComponent({
       // in the SAME patch, so without an echo your own bubble and the answer
       // appear together. Each entry carries expectCount: the number of
       // same-text server messages that proves the server has caught up.
-      localEcho: [] as any[]
+      localEcho: [] as any[],
+      // Pinned to bottom by default; a user who scrolls up is reading — new
+      // messages must not yank them back. Their own send re-pins.
+      atBottom: true
     }
   },
   computed: {
@@ -258,7 +261,7 @@ export default defineComponent({
     },
     pendingQuestion() { this.scrollToEnd() }
   },
-  mounted() { this.scrollToEnd() },
+  mounted() { this.forceScrollToEnd() },
   methods: {
     isNote(entry: any): boolean {
       return entry.kind === 'note' || (entry.kind === 'reply' && entry.role !== 'assistant')
@@ -278,6 +281,7 @@ export default defineComponent({
       })
       this.$emit('send', { _kind: 'message', text })
       this.draft = ''
+      this.forceScrollToEnd()
       nextTick(() => this.autosize())
     },
     // The question card's form: a pressed button is the submission.
@@ -285,6 +289,7 @@ export default defineComponent({
       if (!e?.isAction || !this.pendingQuestion) return
       const values = (e.value && typeof e.value === 'object') ? e.value : {}
       this.$emit('send', { _kind: 'answer', _qid: this.pendingQuestion.qid, ...values })
+      this.forceScrollToEnd()
     },
     buttonlessValues(values: any): Record<string, any> {
       const out: Record<string, any> = {}
@@ -302,11 +307,21 @@ export default defineComponent({
       const s = typeof v === 'string' ? v : JSON.stringify(v)
       return s.length > 40 ? s.slice(0, 37) + '…' : s
     },
+    onScroll() {
+      const el = this.$refs.scroller as HTMLElement | undefined
+      if (!el) return
+      this.atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+    },
     scrollToEnd() {
+      if (!this.atBottom) return
       nextTick(() => {
         const el = this.$refs.scroller as HTMLElement | undefined
         if (el) el.scrollTop = el.scrollHeight
       })
+    },
+    forceScrollToEnd() {
+      this.atBottom = true
+      this.scrollToEnd()
     },
     autosize() {
       const el = this.$refs.composer as HTMLTextAreaElement | undefined
