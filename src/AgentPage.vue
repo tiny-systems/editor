@@ -29,6 +29,16 @@
       </span>
     </header>
 
+    <nav v-if="pages.length > 1" class="max-w-3xl mx-auto px-4 sm:px-6 pb-4 flex gap-2">
+      <button v-for="p in pages" :key="p.name" type="button" @click="changePage(p.name)"
+              :class="['rounded-full px-4 py-1.5 text-sm transition-colors',
+                       dashboardPage === p.name
+                         ? 'bg-indigo-500 text-white'
+                         : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400 hover:border-indigo-300 dark:hover:border-indigo-700']">
+        {{ p.title }}
+      </button>
+    </nav>
+
     <main class="max-w-3xl mx-auto px-4 sm:px-6 pb-16 space-y-6">
       <section v-for="widget in widgets" :key="widget.id"
                class="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
@@ -80,7 +90,23 @@ provideEditorContext({})
 const locale = ref(defaultLocale)
 
 const stream = useProjectStream(props.client, () => props.projectName)
-const { loading, loadingStatus, connected, error, project, widgets } = stream
+const { loading, loadingStatus, connected, error, project, widgets, dashboardPages, dashboardPage } = stream
+
+// Board tabs — an agent's widgets can live on named pages (e.g. the main
+// chat on the default board, credential entry on "Settings"). One page is
+// no chrome; tabs appear only when there is a second board.
+const pages = computed(() =>
+  (dashboardPages.value || []).map((p: any) => ({
+    name: p.Name || p.name,
+    title: p.Title || p.title || p.Name || p.name
+  }))
+)
+
+const changePage = (name: string) => {
+  if (dashboardPage.value === name) return
+  dashboardPage.value = name
+  stream.start()
+}
 
 const agentName = computed(() => project.value?.Name || props.projectName)
 
