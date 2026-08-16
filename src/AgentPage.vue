@@ -102,10 +102,40 @@ const pages = computed(() =>
   }))
 )
 
-const changePage = (name: string) => {
+// The chosen board mirrors into ?board=… so it's linkable, survives refresh,
+// and answers browser back/forward. History API, not a router — this
+// component ships inside multiple hosts (see ProjectWorkspace's tab routing
+// for the same reasoning).
+const isBrowser = () => typeof window !== 'undefined'
+
+const boardFromURL = (): string | null => {
+  if (!isBrowser()) return null
+  return new URLSearchParams(window.location.search).get('board')
+}
+
+const syncBoardToURL = (name: string) => {
+  if (!isBrowser()) return
+  const url = new URL(window.location.href)
+  if (url.searchParams.get('board') === name) return
+  url.searchParams.set('board', name)
+  window.history.pushState({ board: name }, '', url)
+}
+
+const applyBoard = (name: string) => {
   if (dashboardPage.value === name) return
   dashboardPage.value = name
   stream.start()
+}
+
+const changePage = (name: string) => {
+  if (dashboardPage.value === name) return
+  syncBoardToURL(name)
+  applyBoard(name)
+}
+
+const onPopState = () => {
+  const board = boardFromURL()
+  if (board && board !== dashboardPage.value) applyBoard(board)
 }
 
 const agentName = computed(() => project.value?.Name || props.projectName)
@@ -173,6 +203,11 @@ watch(
 )
 
 onMounted(() => {
+  // Adopt ?board= before the stream starts so a shared link opens on the
+  // right board.
+  const board = boardFromURL()
+  if (board) dashboardPage.value = board
+  if (isBrowser()) window.addEventListener('popstate', onPopState)
   stream.start()
 })
 
@@ -181,6 +216,7 @@ onUnmounted(() => {
     clearInterval(retryTimer)
     retryTimer = null
   }
+  if (isBrowser()) window.removeEventListener('popstate', onPopState)
   stream.stop()
 })
 </script>

@@ -829,11 +829,32 @@ function syncTabToURL(name: TabName, replace = false) {
   window.history[replace ? 'replaceState' : 'pushState']({ tab: name }, '', url)
 }
 
+// --- Board routing -------------------------------------------------------
+// The widget board (dashboard page) mirrors into ?board=… the same way the
+// main tab does, so a board is linkable and survives refresh/back.
+
+function boardFromURL(): string | null {
+  if (!isBrowser()) return null
+  return new URLSearchParams(window.location.search).get('board')
+}
+
+function syncBoardToURL(name: string, replace = false) {
+  if (!isBrowser()) return
+  const url = new URL(window.location.href)
+  if (url.searchParams.get('board') === name) return
+  url.searchParams.set('board', name)
+  window.history[replace ? 'replaceState' : 'pushState']({ board: name }, '', url)
+}
+
 function onPopState() {
   // No ?tab= (e.g. stepped back past our first entry) → fall back to the
   // default rather than stranding the user on whatever was last shown.
   const next = tabFromURL() ?? 'flows'
   if (next !== tab.value) adopt(next)
+  const board = boardFromURL()
+  if (board && board !== dashboardPage.value) {
+    applyBoard(board)
+  }
 }
 
 watch(tab, (next) => {
@@ -1131,12 +1152,19 @@ const reloadProject = () => {
   loadProject()
 }
 
-const changePage = (pageName: string) => {
+// Switch the widget board without touching history — used by popstate,
+// where the browser already moved the URL.
+const applyBoard = (pageName: string) => {
   if (grid) {
     grid.removeAll(true)
   }
   dashboardPage.value = pageName
   loadProject()
+}
+
+const changePage = (pageName: string) => {
+  syncBoardToURL(pageName)
+  applyBoard(pageName)
 }
 
 const deletePage = async () => {
@@ -1397,6 +1425,12 @@ onMounted(() => {
     adopt(urlTab)
   } else {
     syncTabToURL(tab.value, true)
+  }
+  // Adopt the board from the URL before the stream starts, so a shared
+  // ?board= link opens on the right widgets.
+  const urlBoard = boardFromURL()
+  if (urlBoard) {
+    dashboardPage.value = urlBoard
   }
   if (isBrowser()) window.addEventListener('popstate', onPopState)
 
