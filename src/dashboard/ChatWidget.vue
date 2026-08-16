@@ -98,8 +98,10 @@
       </template>
     </div>
 
-    <!-- Composer -->
-    <div class="px-3 pb-3 pt-1">
+    <!-- Composer. Hidden in form mode (data.hideComposer) — settings-style
+         surfaces where the flow drives every question and free text has no
+         receiver. -->
+    <div v-if="!data?.hideComposer" class="px-3 pb-3 pt-1">
       <form @submit.prevent="send" class="flex items-end gap-2">
         <textarea
           ref="composer"
