@@ -140,12 +140,28 @@ export default defineComponent({
   },
   emits: ['send'],
   data() {
-    return { draft: '' }
+    return {
+      draft: '',
+      // Optimistic echo. A sent message reaches the server thread only after
+      // a full round-trip (runAction → component → a status patch the SDK
+      // debounces ~1s trailing → stream) — with a fast model the reply lands
+      // in the SAME patch, so without an echo your own bubble and the answer
+      // appear together. Each entry carries expectCount: the number of
+      // same-text server messages that proves the server has caught up.
+      localEcho: [] as any[]
+    }
   },
   computed: {
-    thread(): any[] {
+    serverThread(): any[] {
       const t = this.data?.thread
       return Array.isArray(t) ? t : []
+    },
+    thread(): any[] {
+      const server = this.serverThread
+      const live = this.localEcho.filter(
+        (e: any) => server.filter((m: any) => m.kind === 'message' && m.text === e.text).length < e.expectCount
+      )
+      return live.length ? server.concat(live) : server
     },
     pendingQuestion(): any | null {
       return this.data?.pendingQuestion || null
@@ -186,6 +202,14 @@ export default defineComponent({
       handler() { this.scrollToEnd() },
       deep: false
     },
+    // Prune echoes the server thread has absorbed, so they don't linger as
+    // stale array entries (the thread computed already hides them).
+    serverThread(server: any[]) {
+      if (!this.localEcho.length) return
+      this.localEcho = this.localEcho.filter(
+        (e: any) => server.filter((m: any) => m.kind === 'message' && m.text === e.text).length < e.expectCount
+      )
+    },
     pendingQuestion() { this.scrollToEnd() }
   },
   mounted() { this.scrollToEnd() },
@@ -196,6 +220,16 @@ export default defineComponent({
     send() {
       const text = this.draft.trim()
       if (!text || this.readonly) return
+      // Echo the message into the thread immediately; the server copy
+      // replaces it when the status round-trip lands (see localEcho).
+      const already = this.serverThread.filter((m: any) => m.kind === 'message' && m.text === text).length
+      this.localEcho.push({
+        id: 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        kind: 'message',
+        text,
+        pending: true,
+        expectCount: already + 1
+      })
       this.$emit('send', { _kind: 'message', text })
       this.draft = ''
       nextTick(() => this.autosize())
