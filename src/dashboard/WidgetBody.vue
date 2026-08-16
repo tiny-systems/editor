@@ -54,11 +54,16 @@
       :locale="locale"
       :readonly="readonly"
     />
+    <div v-if="busy"
+         class="flex items-center gap-2 p-2 text-sm text-gray-500 dark:text-gray-400">
+      <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-transparent dark:border-gray-600 dark:border-t-transparent"></span>
+      working…
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import ChatWidget from './ChatWidget.vue'
 import { default as JsonEditor } from '../json-editor/JSONEditor.vue'
 import { getWidgetSchema, widgetHasSchema, isChatWidget } from './widget-schema'
@@ -79,6 +84,30 @@ const emit = defineEmits<{
 const hasSchema = computed(() => widgetHasSchema(props.widget))
 const isChat = computed(() => isChatWidget(props.widget))
 const schema = computed(() => getWidgetSchema(props.widget))
+
+// --- Submit feedback ------------------------------------------------------
+// The flow answers by publishing new widget data; busy bridges the gap. The
+// timer is a floor under that promise: a flow that never answers must not
+// leave the widget spinning forever.
+const BUSY_TIMEOUT_MS = 30000
+const busy = ref(false)
+let busyTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(busy, (value) => {
+  if (busyTimer) {
+    clearTimeout(busyTimer)
+    busyTimer = null
+  }
+  if (value) {
+    busyTimer = setTimeout(() => {
+      busy.value = false
+    }, BUSY_TIMEOUT_MS)
+  }
+})
+
+watch(() => props.widget.data, () => {
+  busy.value = false
+})
 
 // --- Render freeze -------------------------------------------------------
 // focused: a field inside this widget has focus. focusout fires before
@@ -125,6 +154,10 @@ onUnmounted(() => {
     clearTimeout(releaseFocusTimer)
     releaseFocusTimer = null
   }
+  if (busyTimer) {
+    clearTimeout(busyTimer)
+    busyTimer = null
+  }
 })
 
 // The stamp is the form's :key. When it changes, the form rebuilds from the
@@ -153,12 +186,14 @@ const onValue = (event: any) => {
   if (event?.isAction) {
     focused.value = false
     lastEdit.value = 0
+    busy.value = true
   } else {
     lastEdit.value = Date.now()
   }
   emit('signal', event)
 }
 
+// No busy here — chat widgets render their own typing indicator.
 const onChatSend = (value: any) => {
   emit('signal', { isAction: true, value, chat: true })
 }
