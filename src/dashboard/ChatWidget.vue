@@ -12,7 +12,41 @@
   {_kind: "message"|"answer"} for the component.
 -->
 <template>
-  <div class="flex flex-col h-full min-h-[16rem]">
+  <!-- FORM MODE (data.hideComposer): a settings-style surface. Just the
+       pending question's form — no card banner, no thread history, no
+       composer. A stored value shows as a quiet "Current: ••••last4" line
+       (the flow passes it in the ask context), and the latest say note
+       (saved ✓ / validation error) renders under the form. -->
+  <div v-if="data?.hideComposer" class="p-4 space-y-3">
+    <template v-if="pendingQuestion">
+      <p v-if="pendingQuestion.context && pendingQuestion.context.current"
+         class="text-xs text-gray-500 dark:text-gray-400">
+        Current: <span class="font-mono">{{ pendingQuestion.context.current }}</span>
+      </p>
+      <json-editor
+        :schema="questionSchema"
+        :key="pendingQuestion.qid"
+        :initial-value="{}"
+        :plain-struct="true"
+        no-border
+        :has-delete-button="false"
+        :allow-edit-schema="false"
+        :allow-lookup="false"
+        :disable-collapse="true"
+        :readonly="readonly"
+        :locale="locale"
+        class="w-full"
+        @update-value="onQuestionValue"
+      />
+    </template>
+    <p v-else class="text-sm text-gray-400 dark:text-gray-600">Nothing to configure right now.</p>
+    <p v-if="latestNote"
+       :class="['text-xs', latestNote.role === 'error' ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400']">
+      {{ latestNote.text }}
+    </p>
+  </div>
+
+  <div v-else class="flex flex-col h-full min-h-[16rem]">
     <!-- Thread -->
     <div ref="scroller" class="flex-1 overflow-y-auto px-3 pt-3 pb-1 space-y-2">
       <div v-if="thread.length === 0" class="h-full flex items-center justify-center">
@@ -197,6 +231,16 @@ export default defineComponent({
     },
     questionSchema(): any {
       return this.pendingQuestion?.form || { type: 'object', properties: {} }
+    },
+    // Form mode: the newest say note (saved ✓ / validation error) — the only
+    // piece of the thread that surface shows.
+    latestNote(): any | null {
+      const t = this.thread
+      for (let i = t.length - 1; i >= 0; i--) {
+        const e = t[i]
+        if (e.kind === 'reply' || e.kind === 'note') return e
+      }
+      return null
     }
   },
   watch: {
