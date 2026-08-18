@@ -9,16 +9,24 @@
         <div v-if="isEditing" class="flex justify-between gap-x-2 relative">
           <input type="text" v-model="data.title"
                  class="border-indigo-500 text-sm p-1 w-full placeholder-gray-400 appearance-none border rounded outline-0 text-center text-gray-700 dark:bg-gray-900 dark:text-gray-300">
-          <Listbox v-model="data.pagesList" multiple class="min-w-48" as="div">
+          <Listbox v-model="data.pagesList" multiple class="min-w-48 relative" as="div">
             <ListboxButton
-              class="bg-white truncate w-full border border-gray-300 dark:bg-gray-700 dark:border-gray-900 rounded-md pl-3 pr-10 py-2 text-left cursor-default focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+              class="relative bg-white truncate w-full border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-900 dark:text-gray-200 rounded-md pl-3 pr-10 py-2 text-left cursor-default focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
               Pages: {{ (data.pagesList || []).map(page => page).join(', ') }}
+              <!-- The button has always reserved pr-10 for this icon; without
+                   it the padding read as a rendering fault. -->
+              <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                <ChevronUpDownIcon class="h-4 w-4 text-gray-400" aria-hidden="true" />
+              </span>
             </ListboxButton>
             <transition leave-active-class="transition ease-in duration-100" leave-from-class="opacity-100"
                         leave-to-class="opacity-0">
-              <ListboxOptions class="absolute min-w-48 z-10 mt-1 bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none dark:bg-gray-600">
+              <!-- top-full drops the list BELOW the button; without it the
+                   panel anchored to the row and covered the control it
+                   belongs to. -->
+              <ListboxOptions class="absolute top-full right-0 min-w-48 z-20 mt-1 bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none dark:bg-gray-800 dark:ring-white/10">
                 <ListboxOption v-for="page in pages" :key="page.ID || page.id" :value="page.Name || page.name" v-slot="{ active, selected }">
-                  <li :class="[active ? 'text-white bg-indigo-600' : 'text-gray-900', 'text-sm text-left cursor-default select-none relative py-2 pl-3 pr-9']">
+                  <li :class="[active ? 'text-white bg-indigo-600' : 'text-gray-900 dark:text-gray-200', 'text-sm text-left cursor-default select-none relative py-2 pl-3 pr-9']">
                       <span :class="[selected ? 'font-semibold' : 'font-normal', 'block truncate']">
                         {{ page.Title || page.title || page.Name || page.name }}
                       </span>
@@ -61,7 +69,7 @@
 import {PencilSquareIcon, TrashIcon} from '@heroicons/vue/24/outline'
 import Button from "./Button.vue";
 import {Listbox, ListboxButton, ListboxOption, ListboxOptions} from '@headlessui/vue'
-import {CheckIcon} from "@heroicons/vue/24/solid";
+import {CheckIcon, ChevronUpDownIcon} from "@heroicons/vue/24/solid";
 
 const props = defineProps({
   data: {
