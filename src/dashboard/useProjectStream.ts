@@ -275,14 +275,17 @@ export function useProjectStream(
     }
   }
 
-  // A hidden tab holds its stream open for nothing, and the streams are the
-  // scarcest resource the app has: served over HTTP/1.1, a browser allows
-  // six connections PER HOST across every tab, and each open page already
-  // holds several long-lived ones. Two tabs were enough to exhaust the pool,
-  // after which every later request — including the one carrying widget
-  // data — queued forever and the dashboard rendered empty cards. Release
-  // the connection while nobody is looking; the stream re-opens with a full
-  // snapshot on return, so nothing is missed.
+  // A hidden tab holds its stream open for nothing: the server keeps watching
+  // the cluster and pushing events no one can see. Release it while nobody is
+  // looking; the stream re-opens with a full snapshot on return, so nothing is
+  // missed.
+  //
+  // On a host that runs these streams over gRPC-web — the hosted platform —
+  // this also protects the connection pool. Served over HTTP/1.1 a browser
+  // allows six connections PER HOST across every tab, and each open page holds
+  // several long-lived ones, so two tabs exhausted the pool and every later
+  // request queued forever behind them. tiny carries all its streams on one
+  // WebSocket instead and is not subject to that cap.
   let suspended = false
 
   const onVisibility = () => {
