@@ -275,6 +275,35 @@ export function useProjectStream(
     }
   }
 
+  // A hidden tab holds its stream open for nothing, and the streams are the
+  // scarcest resource the app has: served over HTTP/1.1, a browser allows
+  // six connections PER HOST across every tab, and each open page already
+  // holds several long-lived ones. Two tabs were enough to exhaust the pool,
+  // after which every later request — including the one carrying widget
+  // data — queued forever and the dashboard rendered empty cards. Release
+  // the connection while nobody is looking; the stream re-opens with a full
+  // snapshot on return, so nothing is missed.
+  let suspended = false
+
+  const onVisibility = () => {
+    if (typeof document === 'undefined') return
+    if (document.hidden) {
+      if (streamAbort) {
+        suspended = true
+        stop()
+      }
+      return
+    }
+    if (suspended) {
+      suspended = false
+      start()
+    }
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibility)
+  }
+
   // Send a widget submission to its node's control port. Only action events
   // (button press / composer submit) are sent — keystrokes never leave the
   // browser.
@@ -319,6 +348,13 @@ export function useProjectStream(
     }
   }
 
+  const dispose = () => {
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+    stop()
+  }
+
   return {
     // state
     loading,
@@ -336,6 +372,7 @@ export function useProjectStream(
     // lifecycle
     start,
     stop,
+    dispose,
     // submit path
     sendSignal
   }

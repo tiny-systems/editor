@@ -1143,6 +1143,21 @@ const loadProject = () => {
   listenStatStream()
 }
 
+// The trace-rate stream is the least important thing on the page and one of
+// the six connections a browser will give this host across ALL tabs. Drop it
+// while the tab is hidden; a rate nobody can see is worth no connection.
+const onStatVisibility = () => {
+  if (typeof document === 'undefined') return
+  if (document.hidden) {
+    if (statStreamAbort) {
+      statStreamAbort.abort()
+      statStreamAbort = null
+    }
+    return
+  }
+  if (!statStreamAbort) listenStatStream()
+}
+
 const reloadProject = () => {
   // Reset grid before reloading
   if (grid) {
@@ -1433,6 +1448,7 @@ onMounted(() => {
     dashboardPage.value = urlBoard
   }
   if (isBrowser()) window.addEventListener('popstate', onPopState)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onStatVisibility)
 
   // Initialize GridStack
   initGrid()
@@ -1450,7 +1466,8 @@ onUnmounted(() => {
   if (nowTimer) { clearInterval(nowTimer); nowTimer = null }
   if (failureTimer) { clearInterval(failureTimer); failureTimer = null }
   if (isBrowser()) window.removeEventListener('popstate', onPopState)
-  stream.stop()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onStatVisibility)
+  stream.dispose()
   if (statStreamAbort) {
     statStreamAbort.abort()
   }

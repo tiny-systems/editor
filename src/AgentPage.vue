@@ -217,6 +217,6 @@ onUnmounted(() => {
     retryTimer = null
   }
   if (isBrowser()) window.removeEventListener('popstate', onPopState)
-  stream.stop()
+  stream.dispose()
 })
 </script>
