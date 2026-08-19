@@ -21,6 +21,19 @@
       reconnecting…
     </div>
 
+    <!-- An agent that streams perfectly but has never run looks identical to
+         a working one. Say so, and point at the tab that usually fixes it. -->
+    <div v-if="attention"
+         class="max-w-3xl mx-auto px-4 sm:px-6 pt-6">
+      <div class="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-300 flex items-center justify-between gap-4">
+        <span>{{ attention.text }}</span>
+        <button v-if="attention.action" type="button" @click="changePage(attention.action.name)"
+                class="shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+          Open {{ attention.action.title || attention.action.name }}
+        </button>
+      </div>
+    </div>
+
     <header class="max-w-3xl mx-auto px-4 sm:px-6 pt-10 pb-6 flex items-center justify-between gap-4">
       <h1 class="text-3xl font-thin truncate">{{ agentName }}</h1>
       <span :class="['shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium', chip.cls]">
@@ -145,6 +158,24 @@ const agentName = computed(() => project.value?.Name || props.projectName)
 // Offline when the stream is down and retrying.
 const chip = computed(() => {
   if (connected.value) {
+    // "Live" means the stream is up, which is not the same as the agent
+    // working. An agent whose credential was never supplied streams
+    // perfectly and does nothing — the person who installed it sees green
+    // and waits. Say what is actually true.
+    if (runHealth.value === 'failing') {
+      return {
+        label: 'Failing',
+        cls: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+        dot: 'bg-red-500'
+      }
+    }
+    if (runHealth.value === 'never-run') {
+      return {
+        label: 'Not run yet',
+        cls: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400',
+        dot: 'bg-amber-500'
+      }
+    }
     return {
       label: 'Live',
       cls: 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400',
@@ -190,6 +221,73 @@ watch(connected, (up) => {
   }
 })
 
+// Whether this agent has actually done anything, as distinct from whether its
+// stream is connected.
+//
+// There is no reliable way to detect "missing credential" from here: a setup
+// form clears its secret field after a successful save, so an empty field and
+// a saved one look identical. What IS knowable is whether the flow has ever
+// produced a trace, and whether recent runs carried errors — which covers the
+// case that matters, an agent that looks healthy and silently does nothing.
+type RunHealth = 'unknown' | 'never-run' | 'failing' | 'ok'
+const runHealth = ref<RunHealth>('unknown')
+
+const RUN_WINDOW_HOURS = 24
+let runCheckInFlight = false
+
+const refreshRunHealth = async () => {
+  if (!props.projectName || runCheckInFlight) return
+  // The trace backend is reached through a shared port-forward that the rest
+  // of the page also uses; a poller that keeps firing turns one slow read
+  // into a queue of them.
+  if (typeof document !== 'undefined' && document.hidden) return
+  runCheckInFlight = true
+
+  const end = Date.now()
+  const start = end - RUN_WINDOW_HOURS * 60 * 60 * 1000
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), 5000)
+  try {
+    const resp: any = await props.client.statistics.getTraces({
+      ProjectName: props.projectName,
+      Offset: BigInt(0),
+      Start: BigInt(start),
+      End: BigInt(end)
+    }, { signal: abort.signal })
+    const traces = resp?.Traces || []
+    if (traces.length === 0) {
+      runHealth.value = 'never-run'
+      return
+    }
+    runHealth.value = traces.some((t: any) => Number(t.Errors) > 0) ? 'failing' : 'ok'
+  } catch {
+    // A failed check says nothing about the agent; leave the last verdict.
+  } finally {
+    clearTimeout(timer)
+    runCheckInFlight = false
+  }
+}
+
+// What to tell someone whose agent has not done anything. A setup board is
+// the usual reason — it is where an author puts the form for a credential —
+// so point at it when there is one rather than leaving them to hunt.
+const setupPage = computed(() => {
+  return pages.value.find((p: any) => /setting|setup|config/i.test(p.title || p.name))
+})
+
+const attention = computed(() => {
+  if (!connected.value || runHealth.value === 'ok' || runHealth.value === 'unknown') return null
+  if (runHealth.value === 'failing') {
+    return { text: 'Recent runs reported errors. Open the panels below, or check the flow trace.', action: null }
+  }
+  return {
+    text: setupPage.value
+      ? 'This agent has not run yet. If it needs a key or a setting, it is on the ' + (setupPage.value.title || setupPage.value.name) + ' tab.'
+      : 'This agent has not run yet — it may still be waiting on a schedule, or on something it needs to be given.',
+    action: setupPage.value || null
+  }
+})
+
 const onSignal = (widget: any, event: any) => {
   stream.sendSignal(event, widget.node, widget.port, { silent: !!event.chat })
 }
@@ -202,6 +300,8 @@ watch(
   }
 )
 
+let runTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   // Adopt ?board= before the stream starts so a shared link opens on the
   // right board.
@@ -209,9 +309,15 @@ onMounted(() => {
   if (board) dashboardPage.value = board
   if (isBrowser()) window.addEventListener('popstate', onPopState)
   stream.start()
+  refreshRunHealth()
+  runTimer = setInterval(refreshRunHealth, 30000)
 })
 
 onUnmounted(() => {
+  if (runTimer) {
+    clearInterval(runTimer)
+    runTimer = null
+  }
   if (retryTimer) {
     clearInterval(retryTimer)
     retryTimer = null

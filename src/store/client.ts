@@ -137,7 +137,10 @@ export interface RunsClient {
 
 // statistics slice — traces + telemetry.
 export interface StatisticsClient {
-  getTraces(req: any): Promise<any>
+  // opts carries an AbortSignal: a trace read goes through the same shared
+  // port-forward the rest of the page uses, so a caller must be able to bound
+  // its wait rather than hold that path open.
+  getTraces(req: any, opts?: { signal?: AbortSignal }): Promise<any>
   getTraceByID(req: any): Promise<any>
   getStream(req: any): AsyncIterable<any>
 }
