@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {ref, watch, computed} from 'vue'
+import {watch, computed} from 'vue'
 import type {CSSProperties} from 'vue'
 import {Handle, Position} from '@vue-flow/core'
 import InlineOverlay from './InlineOverlay.vue'
@@ -171,15 +171,15 @@ const cardClasses = computed(() => {
     : ' bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow-md hover:shadow-lg hover:border-gray-400 dark:hover:border-gray-600')
 })
 
-// ---------- loading watchdog (unchanged behavior) ----------
+// ---------- has the node reported itself yet? ----------
+//
+// A node covers itself with "Loading" only while its ports are genuinely
+// unknown — before its first status arrives. Time since the last update is NOT
+// a loading state: a healthy node in a flow nobody triggered today reports
+// nothing for days, and covering it reads as broken when it is merely quiet.
+// Staleness belongs in the inspector, which already shows the last update.
 
-const loading = ref(false)
-setInterval(() => {
-  if (!props || !props.data) return
-  const n = new Date(props.data.last_status_update * 1000).getTime()
-  if (!n) { loading.value = true; return }
-  loading.value = (Date.now().valueOf() - n) > 10 * 60 * 1000
-}, 2000)
+const loading = computed(() => (props.data?.handles || []).length === 0)
 </script>
 
 <script lang="ts">
@@ -242,7 +242,7 @@ export default {
   </div>
 
   <template v-if="!props.noExpire">
-    <InlineOverlay :mini="true" v-if="(props.data?.handles || []).length === 0 || loading">Loading</InlineOverlay>
+    <InlineOverlay :mini="true" v-if="loading">Loading</InlineOverlay>
   </template>
 
   <template v-for="h in props.data?.handles || []" :key="h.id">
